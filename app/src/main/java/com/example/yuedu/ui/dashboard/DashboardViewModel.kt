@@ -104,7 +104,9 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
             val updatedBooks = booksWithoutCover.mapNotNull { book ->
                 try {
                     val detail = repository.getBookDetail(book.url)
-                    if (detail.coverUrl.isNotBlank()) detail else null
+                    if (detail.coverUrl.isNotBlank()) {
+                        book.copy(coverUrl = detail.coverUrl)
+                    } else null
                 } catch (_: Exception) {
                     null
                 }

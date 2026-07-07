@@ -1,4 +1,4 @@
-package com.example.yuedu.ui.reader
+﻿package com.example.yuedu.ui.reader
 
 import android.content.Intent
 import android.content.IntentFilter
@@ -32,6 +32,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * 小说阅读界面 Activity
+ * 负责展示章节内容、处理用户交互、管理分页、夜模式、字体大小等阅读功能
+ */
 class ReaderActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityReaderBinding
@@ -42,7 +46,13 @@ class ReaderActivity : AppCompatActivity() {
     private var pages = listOf<String>()
     private var isNavigatingChapter = false
     private var currentPageIndex = 0
+    private var chapterListPage = 0
+    private val chapterPageSize = 50
 
+    /**
+     * Activity 创建时初始化
+     * 设置视图绑定、获取传递参数、初始化 ViewModel、配置视图和观察者
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityReaderBinding.inflate(layoutInflater)
@@ -65,8 +75,12 @@ class ReaderActivity : AppCompatActivity() {
 
     private var touchStartX = 0f
     private var touchStartY = 0f
-    private var swipeThreshold = 80f
+    private val swipeThreshold = 80f
 
+    /**
+     * 配置 ViewPager2
+     * 设置预加载页数、翻页动效、页面切换回调
+     */
     private fun setupViewPager() {
         binding.viewpagerReader.offscreenPageLimit = 1
         binding.viewpagerReader.setPageTransformer(DepthPageTransformer())
@@ -79,6 +93,12 @@ class ReaderActivity : AppCompatActivity() {
         })
     }
 
+    /**
+     * 分发触摸事件，处理手势交互
+     * - 左右滑动超过阈值时，跨章节跳转
+     * - 轻触点击分三区处理：左侧上一页，右侧下一页，中间切换导航栏显示
+     * - 如果导航栏可见且点击落在顶栏/底栏区域，放行事件让按钮响应
+     */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
@@ -97,12 +117,48 @@ class ReaderActivity : AppCompatActivity() {
                         viewModel.prevChapter()
                         return true
                     }
+                } else if (abs(deltaX) < swipeThreshold / 2 && abs(deltaY) < swipeThreshold / 2) {
+                    if (isControlsVisible) {
+                        val topBarHeight = binding.layoutTopBar.height
+                        val bottomBarHeight = binding.layoutBottomBar.height
+                        val tapY = event.y
+                        val rootHeight = binding.root.height
+                        if (tapY < topBarHeight || tapY > rootHeight - bottomBarHeight) {
+                            return super.dispatchTouchEvent(event)
+                        }
+                    }
+                    val screenWidth = resources.displayMetrics.widthPixels
+                    val tapX = event.x
+                    if (tapX > screenWidth * 2 / 3) {
+                        val currentPos = binding.viewpagerReader.currentItem
+                        if (currentPos < pages.size - 1) {
+                            binding.viewpagerReader.setCurrentItem(currentPos + 1, true)
+                        } else {
+                            viewModel.nextChapter()
+                        }
+                        return true
+                    } else if (tapX < screenWidth / 3) {
+                        val currentPos = binding.viewpagerReader.currentItem
+                        if (currentPos > 0) {
+                            binding.viewpagerReader.setCurrentItem(currentPos - 1, true)
+                        } else {
+                            viewModel.prevChapter()
+                        }
+                        return true
+                    } else {
+                        toggleControls()
+                        return true
+                    }
                 }
             }
         }
         return super.dispatchTouchEvent(event)
     }
 
+    /**
+     * 设置底部导航栏所有按钮的点击监听
+     * 包括收藏、下载、评论、分享、更多、目录、上下章切换、夜模式、字体设置、进度条
+     */
     private fun setupControls() {
         binding.btnAddShelf.setOnClickListener {
             viewModel.toggleBookshelf()
@@ -173,6 +229,10 @@ class ReaderActivity : AppCompatActivity() {
         })
     }
 
+    /**
+     * 观察 ViewModel 数据变化，更新 UI
+     * 监听章节内容、标题、加载状态、章节索引、章节列表、收藏状态、下载进度等
+     */
     private fun observeData() {
         viewModel.chapterContent.observe(this) { content ->
             binding.progressLoading.visibility = View.GONE
@@ -224,6 +284,10 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 更新底部进度条和页码信息
+     * 根据当前章节索引和总章节数计算进度百分比
+     */
     private fun updateProgressBar() {
         val chapterCount = viewModel.chapterList.value?.size ?: 0
         val currentChapter = (viewModel.chapterIndex.value ?: 0)
@@ -240,6 +304,11 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 将章节内容分页并显示到 ViewPager
+     * 使用 StaticLayout 计算每行文字位置，根据可用高度切割内容
+     * 减去半行高度让内容底部向上提半行，避免文字紧贴底部
+     */
     private fun paginateAndDisplay(content: String) {
         val paint = TextPaint()
         paint.textSize = dpToPx(currentFontSize).toFloat()
@@ -269,7 +338,8 @@ class ReaderActivity : AppCompatActivity() {
         val textLength = content.length
 
         while (offset < textLength) {
-            val usableHeight = fullPageHeight - titleHeight - footerHeight
+            val halfLineHeight = dpToPx(currentFontSize * 0.5f)
+            val usableHeight = fullPageHeight - titleHeight - footerHeight - halfLineHeight
             val layout = buildLayout(content.substring(offset), usableHeight)
             val totalLines = layout.lineCount
             if (totalLines == 0) break
@@ -295,13 +365,15 @@ class ReaderActivity : AppCompatActivity() {
         displayPages()
     }
 
+    /**
+     * 将分好页的内容更新到适配器并显示
+     * 同时应用主题和字体大小
+     */
     private fun displayPages() {
         isNavigatingChapter = true
         val chapterTitle = viewModel.chapterTitle.value ?: ""
         val adapter = ReaderPagerAdapter(pages, chapterTitle) { pageView ->
-            pageView.setOnClickListener {
-                toggleControls()
-            }
+            // Click handling is done in dispatchTouchEvent
         }
         binding.viewpagerReader.adapter = adapter
         binding.viewpagerReader.setCurrentItem(0, false)
@@ -311,6 +383,9 @@ class ReaderActivity : AppCompatActivity() {
         updateProgressBar()
     }
 
+    /**
+     * 应用日/夜主题颜色到所有元素
+     */
     private fun applyTheme() {
         val adapter = binding.viewpagerReader.adapter as? ReaderPagerAdapter ?: return
         val textColor = if (isNightMode) {
@@ -339,11 +414,17 @@ class ReaderActivity : AppCompatActivity() {
         binding.layoutBottomBar.setBackgroundColor(bottomBarBg)
     }
 
+    /**
+     * 应用当前字体大小到页面适配器
+     */
     private fun applyFontSize() {
         val adapter = binding.viewpagerReader.adapter as? ReaderPagerAdapter ?: return
         adapter.updateTextSize(dpToPx(currentFontSize))
     }
 
+    /**
+     * 切换顶部和底部导航栏的显示/隐藏
+     */
     private fun toggleControls() {
         if (isControlsVisible) {
             binding.layoutTopBar.visibility = View.GONE
@@ -357,6 +438,10 @@ class ReaderActivity : AppCompatActivity() {
         isControlsVisible = !isControlsVisible
     }
 
+    /**
+     * 切换日/夜间模式
+     * 更新状态栏和导航栏颜色、亮度
+     */
     private fun toggleNightMode() {
         isNightMode = !isNightMode
         applyTheme()
@@ -378,34 +463,65 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 弹出章节目录对话框，分页显示所有章节
+     * 自动定位到当前章节所在页，点击章节跳转，支持上下翻页
+     */
     private fun showChapterListDialog() {
         viewModel.chapterList.value?.let { chapters ->
+            if (chapters.isEmpty()) return@let
             val currentIndex = viewModel.chapterIndex.value ?: 0
-            val adapter = object : ArrayAdapter<String>(this, R.layout.item_chapter, chapters.map { it.title }) {
+            val totalPages = (chapters.size + chapterPageSize - 1) / chapterPageSize
+            chapterListPage = currentIndex / chapterPageSize
+
+            val startIndex = chapterListPage * chapterPageSize
+            val endIndex = minOf(startIndex + chapterPageSize, chapters.size)
+            val pageChapters = chapters.subList(startIndex, endIndex)
+
+            val adapter = object : ArrayAdapter<String>(this, R.layout.item_chapter, pageChapters.map { it.title }) {
                 override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val view = super.getView(position, convertView, parent)
                     val titleView = view.findViewById<TextView>(R.id.text_chapter_title)
                     val badgeView = view.findViewById<TextView>(R.id.text_latest_badge)
 
-                    titleView.setTextColor(if (position == currentIndex)
+                    val realPosition = startIndex + position
+                    titleView.setTextColor(if (realPosition == currentIndex)
                         resources.getColor(android.R.color.holo_blue_dark, theme)
                     else
                         resources.getColor(android.R.color.black, theme))
 
-                    badgeView.visibility = if (position == chapters.size - 1) View.VISIBLE else View.GONE
+                    badgeView.visibility = if (realPosition == chapters.size - 1) View.VISIBLE else View.GONE
                     return view
                 }
             }
+
+            val title = getString(R.string.chapter_list) + " (-/)"
             AlertDialog.Builder(this)
-                .setTitle(R.string.chapter_list)
+                .setTitle(title)
                 .setAdapter(adapter) { _, which ->
-                    viewModel.jumpToChapter(which)
+                    viewModel.jumpToChapter(startIndex + which)
                 }
-                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton("下一页") { _, _ ->
+                    if (chapterListPage < totalPages - 1) {
+                        chapterListPage++
+                        showChapterListDialog()
+                    }
+                }
+                .setNegativeButton("上一页") { _, _ ->
+                    if (chapterListPage > 0) {
+                        chapterListPage--
+                        showChapterListDialog()
+                    }
+                }
+                .setNeutralButton(android.R.string.cancel, null)
                 .show()
         }
     }
 
+    /**
+     * 弹出字体大小设置对话框
+     * 通过滑动条调整预览，确认后应用到阅读界面
+     */
     private fun showFontSizeDialog() {
         binding.textChapterTitle.visibility = View.VISIBLE
         binding.textChapterTitle.text = getString(R.string.font_size) + ": ${currentFontSize.toInt()}sp"
@@ -442,10 +558,17 @@ class ReaderActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * dp 转 px 工具方法
+     */
     private fun dpToPx(dp: Float): Int {
         return (dp * resources.displayMetrics.density + 0.5f).toInt()
     }
 
+    /**
+     * ViewPager2 页面适配器
+     * 每个 Item 对应一个分页，展示章节标题、正文内容、页脚时间和电量
+     */
     inner class ReaderPagerAdapter(
         private val pageList: List<String>,
         private val chapterTitle: String,
@@ -458,17 +581,26 @@ class ReaderActivity : AppCompatActivity() {
         private val titleSizeSp = 14f
         private val footerSizeSp = 10f
 
+        /**
+         * 更新文字和背景颜色，通知刷新
+         */
         fun updateColors(textColor: Int, bgColor: Int) {
             this.textColor = textColor
             this.bgColor = bgColor
             notifyDataSetChanged()
         }
 
+        /**
+         * 更新文字大小，通知刷新
+         */
         fun updateTextSize(sizePx: Int) {
             this.textSizePx = sizePx
             notifyDataSetChanged()
         }
 
+        /**
+         * 获取当前电池电量百分比
+         */
         private fun getBatteryLevel(): Int {
             val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
@@ -476,10 +608,17 @@ class ReaderActivity : AppCompatActivity() {
             return if (scale > 0) (level * 100 / scale) else 100
         }
 
+        /**
+         * 获取当前时间 HH:mm 格式
+         */
         private fun getCurrentTime(): String {
             return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         }
 
+        /**
+         * 创建页面 ViewHolder
+         * 构建标题、正文、页脚三个 TextView
+         */
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PageViewHolder {
             val container = LinearLayout(parent.context).apply {
                 layoutParams = FrameLayout.LayoutParams(
@@ -535,6 +674,10 @@ class ReaderActivity : AppCompatActivity() {
             return PageViewHolder(container, titleView, contentView, footerView)
         }
 
+        /**
+         * 绑定页面数据到 ViewHolder
+         * 设置标题、正文、页脚（页码 + 时间 + 电量）
+         */
         override fun onBindViewHolder(holder: PageViewHolder, position: Int) {
             val timeStr = getCurrentTime()
             val batteryLevel = getBatteryLevel()
@@ -567,8 +710,14 @@ class ReaderActivity : AppCompatActivity() {
             holder.container.setBackgroundColor(bgColor)
         }
 
+        /**
+         * 返回分页总数
+         */
         override fun getItemCount(): Int = pageList.size
 
+        /**
+         * 页面 ViewHolder，持有标题、正文、页脚引用
+         */
         inner class PageViewHolder(
             val container: LinearLayout,
             val titleView: TextView,
@@ -577,6 +726,10 @@ class ReaderActivity : AppCompatActivity() {
         ) : RecyclerView.ViewHolder(container)
     }
 
+    /**
+     * ViewPager2 深度页面切换动效
+     * 实现卡片翻页时的缩放和透明度渐变效果
+     */
     private class DepthPageTransformer : ViewPager2.PageTransformer {
         override fun transformPage(page: View, position: Float) {
             val pageWidth = page.width

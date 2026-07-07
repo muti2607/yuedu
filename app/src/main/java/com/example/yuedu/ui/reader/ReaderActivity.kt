@@ -71,14 +71,17 @@ class ReaderActivity : AppCompatActivity() {
 
         val repository = (application as YueduApplication).repository
         val bookUrl = intent.getStringExtra("book_url") ?: return
-        val chapterIndex = intent.getIntExtra("chapter_index", 0)
+        val initialChapterIndex = intent.getIntExtra("chapter_index", 0)
 
-        viewModel = ReaderViewModel(repository, bookUrl, chapterIndex)
+        lifecycleScope.launch {
+            val savedChapterIndex = repository.getBook(bookUrl)?.lastReadChapterIndex ?: initialChapterIndex
+            viewModel = ReaderViewModel(repository, bookUrl, if (savedChapterIndex >= 0) savedChapterIndex else initialChapterIndex)
 
-        setupViewPager()
-        setupControls()
-        setupCatalogSheet()
-        observeData()
+            setupViewPager()
+            setupControls()
+            setupCatalogSheet()
+            observeData()
+        }
     }
 
     private var touchStartX = 0f
@@ -97,6 +100,7 @@ class ReaderActivity : AppCompatActivity() {
             override fun onPageSelected(position: Int) {
                 currentPageIndex = position
                 updateProgressBar()
+                updateReaderFooter()
             }
         })
     }
@@ -108,6 +112,14 @@ class ReaderActivity : AppCompatActivity() {
      * - 如果导航栏可见且点击落在顶栏/底栏区域，放行事件让按钮响应
      */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (isCatalogVisible) {
+            val touchY = event.y
+            if (event.action == MotionEvent.ACTION_UP && touchY < binding.root.height - binding.layoutCatalogSheet.height) {
+                hideCatalogSheet()
+                return true
+            }
+            return super.dispatchTouchEvent(event)
+        }
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 touchStartX = event.x
@@ -262,7 +274,7 @@ class ReaderActivity : AppCompatActivity() {
         viewModel.chapterIndex.observe(this) { index ->
             viewModel.book.value?.let { book ->
                 lifecycleScope.launch {
-                    viewModel.repository.updateReadingProgress(book.url, index, 0)
+                    viewModel.repository.updateReadingProgress(book.url, index, currentPageIndex)
                 }
             }
             updateProgressBar()
@@ -312,6 +324,21 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateReaderFooter() {
+        val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        val batteryLevel = getBatteryLevel()
+        val pageCount = binding.viewpagerReader.adapter?.itemCount ?: 0
+        val currentPage = currentPageIndex + 1
+        binding.textReaderFooter.text = "$currentPage/$pageCount  $timeStr  \uD83D\uDD0B$batteryLevel%"
+    }
+
+    private fun getBatteryLevel(): Int {
+        val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        return if (scale > 0) (level * 100 / scale) else 100
+    }
+
     /**
      * 将章节内容分页并显示到 ViewPager
      * 使用 StaticLayout 计算每行文字位置，根据可用高度切割内容
@@ -326,7 +353,6 @@ class ReaderActivity : AppCompatActivity() {
         val pageWidth = binding.viewpagerReader.width - dpToPx(20f) * 2
         val fullPageHeight = binding.viewpagerReader.height
         val titleHeight = dpToPx(36f)
-        val footerHeight = dpToPx(26f)
 
         if (pageWidth <= 0 || fullPageHeight <= 0) {
             pages = listOf(content)
@@ -344,10 +370,11 @@ class ReaderActivity : AppCompatActivity() {
         val pageList = mutableListOf<String>()
         var offset = 0
         val textLength = content.length
+        val footerMargin = dpToPx(8f)
+        val halfLineHeight = dpToPx(currentFontSize * 0.5f)
+        val usableHeight = fullPageHeight - titleHeight - footerMargin - halfLineHeight
 
         while (offset < textLength) {
-            val halfLineHeight = dpToPx(currentFontSize * 0.5f)
-            val usableHeight = fullPageHeight - titleHeight - footerHeight - halfLineHeight
             val layout = buildLayout(content.substring(offset), usableHeight)
             val totalLines = layout.lineCount
             if (totalLines == 0) break
@@ -389,6 +416,7 @@ class ReaderActivity : AppCompatActivity() {
         applyTheme()
         applyFontSize()
         updateProgressBar()
+        updateReaderFooter()
     }
 
     /**
@@ -420,6 +448,14 @@ class ReaderActivity : AppCompatActivity() {
         binding.readerContainer.setBackgroundColor(bgColor)
         binding.layoutTopBar.setBackgroundColor(topBarBg)
         binding.layoutBottomBar.setBackgroundColor(bottomBarBg)
+        binding.textReaderFooter.setTextColor(
+            if (isNightMode) {
+                resources.getColor(R.color.reader_text_night, theme)
+            } else {
+                resources.getColor(android.R.color.darker_gray, theme)
+            }
+        )
+        binding.textReaderFooter.setBackgroundColor(bgColor)
         if (::catalogAdapter.isInitialized) {
             catalogAdapter.setNightMode(isNightMode)
         }
@@ -620,6 +656,17 @@ class ReaderActivity : AppCompatActivity() {
         super.onBackPressed()
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (::viewModel.isInitialized) {
+            val bookUrl = viewModel.book.value?.url ?: return
+            val chapterIndex = viewModel.chapterIndex.value ?: 0
+            lifecycleScope.launch {
+                viewModel.repository.updateReadingProgress(bookUrl, chapterIndex, currentPageIndex)
+            }
+        }
+    }
+
     /**
      * ViewPager2 页面适配器
      * 每个 Item 对应一个分页，展示章节标题、正文内容、页脚时间和电量
@@ -634,7 +681,6 @@ class ReaderActivity : AppCompatActivity() {
         private var bgColor = resources.getColor(R.color.reader_bg, theme)
         private var textSizePx = dpToPx(18f)
         private val titleSizeSp = 14f
-        private val footerSizeSp = 10f
 
         /**
          * 更新文字和背景颜色，通知刷新
@@ -651,23 +697,6 @@ class ReaderActivity : AppCompatActivity() {
         fun updateTextSize(sizePx: Int) {
             this.textSizePx = sizePx
             notifyDataSetChanged()
-        }
-
-        /**
-         * 获取当前电池电量百分比
-         */
-        private fun getBatteryLevel(): Int {
-            val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-            val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-            return if (scale > 0) (level * 100 / scale) else 100
-        }
-
-        /**
-         * 获取当前时间 HH:mm 格式
-         */
-        private fun getCurrentTime(): String {
-            return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         }
 
         /**
@@ -703,7 +732,7 @@ class ReaderActivity : AppCompatActivity() {
                     0,
                     1f
                 )
-                setPadding(dpToPx(20f), 0, dpToPx(20f), 0)
+                setPadding(dpToPx(20f), 0, dpToPx(20f), dpToPx(8f))
                 setTextColor(textColor)
                 setBackgroundColor(bgColor)
                 textSize = textSizePx.toFloat() / resources.displayMetrics.density
@@ -714,19 +743,7 @@ class ReaderActivity : AppCompatActivity() {
             }
             container.addView(contentView)
 
-            val footerView = TextView(parent.context).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                setPadding(dpToPx(20f), dpToPx(4f), dpToPx(20f), dpToPx(8f))
-                textSize = footerSizeSp
-                setTextColor(textColor)
-                gravity = Gravity.CENTER
-            }
-            container.addView(footerView)
-
-            return PageViewHolder(container, titleView, contentView, footerView)
+            return PageViewHolder(container, titleView, contentView, null)
         }
 
         /**
@@ -734,10 +751,6 @@ class ReaderActivity : AppCompatActivity() {
          * 设置标题、正文、页脚（页码 + 时间 + 电量）
          */
         override fun onBindViewHolder(holder: PageViewHolder, position: Int) {
-            val timeStr = getCurrentTime()
-            val batteryLevel = getBatteryLevel()
-            val footerText = "${position + 1}/$itemCount  $timeStr  \uD83D\uDD0B$batteryLevel%"
-
             holder.titleView.apply {
                 if (chapterTitle.isNotEmpty()) {
                     text = chapterTitle
@@ -757,11 +770,6 @@ class ReaderActivity : AppCompatActivity() {
                 typeface = Typeface.SERIF
             }
 
-            holder.footerView.apply {
-                text = footerText
-                setTextColor(textColor)
-            }
-
             holder.container.setBackgroundColor(bgColor)
         }
 
@@ -777,7 +785,7 @@ class ReaderActivity : AppCompatActivity() {
             val container: LinearLayout,
             val titleView: TextView,
             val contentView: TextView,
-            val footerView: TextView
+            @Suppress("unused") val footerView: TextView?
         ) : RecyclerView.ViewHolder(container)
     }
 

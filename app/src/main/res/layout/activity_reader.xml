@@ -9,294 +9,318 @@
     android:background="@color/reader_bg"
     tools:context=".ui.reader.ReaderActivity">
 
+    <!-- 主内容区域：垂直排列 -->
     <LinearLayout
-        android:id="@+id/layout_top_bar"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_gravity="top"
-        android:background="@color/reader_top_bar_bg"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
-        android:elevation="2dp"
-        android:visibility="gone"
-        tools:visibility="visible">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-        <ImageButton
-            android:id="@+id/btn_back"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/back"
-            android:src="@drawable/ic_arrow_back"
-            android:tint="@color/reader_text" />
-
-        <TextView
-            android:id="@+id/btn_add_shelf"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:gravity="center"
+        <!-- 顶部栏 -->
+        <LinearLayout
+            android:id="@+id/layout_top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@color/reader_top_bar_bg"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
             android:paddingStart="4dp"
-            android:paddingEnd="12dp"
-            android:text="@string/add_shelf"
-            android:textColor="@color/reader_text"
-            android:textSize="14sp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true" />
+            android:paddingEnd="4dp"
+            android:elevation="2dp"
+            android:visibility="gone"
+            tools:visibility="visible">
 
-        <TextView
-            android:id="@+id/btn_download"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:paddingStart="4dp"
-            android:paddingEnd="12dp"
-            android:text="@string/download"
-            android:textColor="@color/reader_text"
-            android:textSize="14sp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true" />
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <FrameLayout
-            android:id="@+id/layout_comment"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true">
-
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_comment"
+            <ImageButton
+                android:id="@+id/btn_back"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/back"
+                android:src="@drawable/ic_arrow_back"
                 android:tint="@color/reader_text" />
 
             <TextView
-                android:id="@+id/text_comment_badge"
+                android:id="@+id/btn_add_shelf"
                 android:layout_width="wrap_content"
-                android:layout_height="16dp"
-                android:layout_gravity="end|top"
-                android:layout_marginEnd="2dp"
-                android:layout_marginTop="2dp"
-                android:background="@drawable/badge_background"
+                android:layout_height="match_parent"
                 android:gravity="center"
-                android:minWidth="16dp"
-                android:text="0"
-                android:textColor="@color/white"
-                android:textSize="10sp"
+                android:paddingStart="4dp"
+                android:paddingEnd="12dp"
+                android:text="@string/add_shelf"
+                android:textColor="@color/reader_text"
+                android:textSize="14sp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/btn_download"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:paddingStart="4dp"
+                android:paddingEnd="12dp"
+                android:text="@string/download"
+                android:textColor="@color/reader_text"
+                android:textSize="14sp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <FrameLayout
+                android:id="@+id/layout_comment"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_comment"
+                    android:tint="@color/reader_text" />
+
+                <TextView
+                    android:id="@+id/text_comment_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="16dp"
+                    android:layout_gravity="end|top"
+                    android:layout_marginEnd="2dp"
+                    android:layout_marginTop="2dp"
+                    android:background="@drawable/badge_background"
+                    android:gravity="center"
+                    android:minWidth="16dp"
+                    android:text="0"
+                    android:textColor="@color/white"
+                    android:textSize="10sp"
+                    android:visibility="gone"
+                    tools:visibility="visible"
+                    tools:text="2" />
+            </FrameLayout>
+
+            <ImageButton
+                android:id="@+id/btn_share"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/share"
+                android:src="@drawable/ic_share"
+                android:tint="@color/reader_text" />
+
+            <ImageButton
+                android:id="@+id/btn_more"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/more"
+                android:src="@drawable/ic_more_vert"
+                android:tint="@color/reader_text" />
+        </LinearLayout>
+
+        <!-- 阅读区域：填充剩余空间 -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.viewpager2.widget.ViewPager2
+                android:id="@+id/viewpager_reader"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal" />
+
+            <TextView
+                android:id="@+id/text_chapter_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center"
+                android:textColor="@android:color/darker_gray"
+                android:textSize="12sp"
                 android:visibility="gone"
-                tools:visibility="visible"
-                tools:text="2" />
+                tools:text="Chapter 1" />
         </FrameLayout>
 
-        <ImageButton
-            android:id="@+id/btn_share"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/share"
-            android:src="@drawable/ic_share"
-            android:tint="@color/reader_text" />
-
-        <ImageButton
-            android:id="@+id/btn_more"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/more"
-            android:src="@drawable/ic_more_vert"
-            android:tint="@color/reader_text" />
-    </LinearLayout>
-
-    <androidx.viewpager2.widget.ViewPager2
-            android:id="@+id/viewpager_reader"
-            android:layout_width="match_parent"
-            android:layout_height="710dp"
-            android:orientation="horizontal"/>
-
-    <TextView
-        android:id="@+id/text_chapter_title"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:gravity="center"
-        android:textColor="@android:color/darker_gray"
-        android:textSize="12sp"
-        android:visibility="gone"
-        tools:text="Chapter 1" />
-
-    <LinearLayout
-        android:id="@+id/layout_bottom_bar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="@color/reader_bottom_bar_bg"
-        android:orientation="vertical"
-        android:elevation="4dp"
-        android:visibility="gone"
-        tools:visibility="visible">
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0.5dp"
-            android:background="@color/reader_bottom_bar_divider" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp">
-
-            <TextView
-                android:id="@+id/btn_prev_chapter"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/prev_chapter"
-                android:textColor="@color/reader_text"
-                android:textSize="14sp"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true" />
-
-            <SeekBar
-                android:id="@+id/seekbar_progress"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:layout_marginEnd="8dp"
-                android:max="100"
-                android:progress="0"
-                style="@style/Widget.AppCompat.SeekBar" />
-
-            <TextView
-                android:id="@+id/btn_next_chapter"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/next_chapter"
-                android:textColor="@color/reader_text"
-                android:textSize="14sp"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true" />
-        </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0.5dp"
-            android:background="@color/reader_bottom_bar_divider" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:gravity="center"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:id="@+id/btn_catalog"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true">
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_catalog"
-                    android:tint="@color/reader_text" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/catalog"
-                    android:textColor="@color/reader_text"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/btn_night_mode"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true">
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_night"
-                    android:tint="@color/reader_text" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/night_mode"
-                    android:textColor="@color/reader_text"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/btn_settings"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true">
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_settings"
-                    android:tint="@color/reader_text" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings"
-                    android:textColor="@color/reader_text"
-                    android:textSize="10sp" />
-            </LinearLayout>
-        </LinearLayout>
-
+        <!-- 页码/时间/电量底栏：固定在最底部，始终可见 -->
         <TextView
-                android:id="@+id/text_page_info"
+            android:id="@+id/text_reader_footer"
+            android:layout_width="match_parent"
+            android:layout_height="28dp"
+            android:gravity="center"
+            android:textColor="@android:color/darker_gray"
+            android:textSize="10sp"
+            android:background="@color/reader_bg"
+            tools:text="1/10  12:00  🔋85%" />
+
+        <!-- 底部控制栏 -->
+        <LinearLayout
+            android:id="@+id/layout_bottom_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/reader_bottom_bar_bg"
+            android:orientation="vertical"
+            android:elevation="4dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <View
                 android:layout_width="match_parent"
-                android:layout_height="20dp"
+                android:layout_height="0.5dp"
+                android:background="@color/reader_bottom_bar_divider" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp">
+
+                <TextView
+                    android:id="@+id/text_page_info"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/reader_text"
+                    android:textSize="12sp"
+                    android:minWidth="36dp"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/btn_prev_chapter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:text="@string/prev_chapter"
+                    android:textColor="@color/reader_text"
+                    android:textSize="14sp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <SeekBar
+                    android:id="@+id/seekbar_progress"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:max="100"
+                    android:progress="0"
+                    style="@style/Widget.AppCompat.SeekBar" />
+
+                <TextView
+                    android:id="@+id/btn_next_chapter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:text="@string/next_chapter"
+                    android:textColor="@color/reader_text"
+                    android:textSize="14sp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/reader_bottom_bar_divider" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
                 android:gravity="center"
-                android:textColor="@color/reader_text"
-                android:textSize="10sp"
-                android:visibility="gone"
-                tools:text="1/100"
-                tools:visibility="visible"/>
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/btn_catalog"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_catalog"
+                        android:tint="@color/reader_text" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/catalog"
+                        android:textColor="@color/reader_text"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btn_night_mode"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_night"
+                        android:tint="@color/reader_text" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/night_mode"
+                        android:textColor="@color/reader_text"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btn_settings"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_settings"
+                        android:tint="@color/reader_text" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings"
+                        android:textColor="@color/reader_text"
+                        android:textSize="10sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 
+    <!-- 加载中 -->
     <ProgressBar
         android:id="@+id/progress_loading"
         android:layout_width="48dp"
@@ -325,7 +349,6 @@
         android:visibility="gone"
         android:elevation="8dp">
 
-        <!-- 抽屉头部 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="48dp"
@@ -359,7 +382,6 @@
             android:layout_height="0.5dp"
             android:background="#E0E0E0" />
 
-        <!-- 章节列表 -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler_catalog"
             android:layout_width="match_parent"

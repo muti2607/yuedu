@@ -1,5 +1,8 @@
 ﻿package com.example.yuedu.ui.reader
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Typeface
@@ -21,11 +24,14 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.example.yuedu.YueduApplication
 import com.example.yuedu.R
+import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.databinding.ActivityReaderBinding
+import com.example.yuedu.ui.adapter.ChapterAdapter
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import java.text.SimpleDateFormat
@@ -46,8 +52,9 @@ class ReaderActivity : AppCompatActivity() {
     private var pages = listOf<String>()
     private var isNavigatingChapter = false
     private var currentPageIndex = 0
-    private var chapterListPage = 0
-    private val chapterPageSize = 50
+    private var isCatalogVisible = false
+    private var catalogAnimator: ValueAnimator? = null
+    private lateinit var catalogAdapter: ChapterAdapter
 
     /**
      * Activity 创建时初始化
@@ -70,6 +77,7 @@ class ReaderActivity : AppCompatActivity() {
 
         setupViewPager()
         setupControls()
+        setupCatalogSheet()
         observeData()
     }
 
@@ -187,7 +195,7 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         binding.btnCatalog.setOnClickListener {
-            showChapterListDialog()
+            showCatalogSheet()
         }
 
         binding.btnPrevChapter.setOnClickListener {
@@ -412,6 +420,9 @@ class ReaderActivity : AppCompatActivity() {
         binding.readerContainer.setBackgroundColor(bgColor)
         binding.layoutTopBar.setBackgroundColor(topBarBg)
         binding.layoutBottomBar.setBackgroundColor(bottomBarBg)
+        if (::catalogAdapter.isInitialized) {
+            catalogAdapter.setNightMode(isNightMode)
+        }
     }
 
     /**
@@ -464,57 +475,93 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     /**
-     * 弹出章节目录对话框，分页显示所有章节
-     * 自动定位到当前章节所在页，点击章节跳转，支持上下翻页
+     * 初始化悬浮目录抽屉
+     * 配置 RecyclerView、适配器、遮罩和关闭按钮点击事件
      */
-    private fun showChapterListDialog() {
+    private fun setupCatalogSheet() {
+        catalogAdapter = ChapterAdapter { chapter ->
+            val index = viewModel.chapterList.value?.indexOf(chapter) ?: -1
+            if (index >= 0) {
+                hideCatalogSheet()
+                viewModel.jumpToChapter(index)
+            }
+        }
+
+        binding.recyclerCatalog.layoutManager = LinearLayoutManager(this)
+        binding.recyclerCatalog.adapter = catalogAdapter
+
+        binding.scrimCatalog.setOnClickListener {
+            hideCatalogSheet()
+        }
+
+        binding.btnCatalogClose.setOnClickListener {
+            hideCatalogSheet()
+        }
+    }
+
+    /**
+     * 显示悬浮目录抽屉
+     * 从底部以动画形式滑入，显示所有章节，自动滚动到当前章节
+     */
+    private fun showCatalogSheet() {
         viewModel.chapterList.value?.let { chapters ->
-            if (chapters.isEmpty()) return@let
+            if (chapters.isEmpty()) return
             val currentIndex = viewModel.chapterIndex.value ?: 0
-            val totalPages = (chapters.size + chapterPageSize - 1) / chapterPageSize
-            chapterListPage = currentIndex / chapterPageSize
 
-            val startIndex = chapterListPage * chapterPageSize
-            val endIndex = minOf(startIndex + chapterPageSize, chapters.size)
-            val pageChapters = chapters.subList(startIndex, endIndex)
+            catalogAdapter.submitList(chapters)
+            catalogAdapter.setCurrentIndex(currentIndex)
+            catalogAdapter.setNightMode(isNightMode)
 
-            val adapter = object : ArrayAdapter<String>(this, R.layout.item_chapter, pageChapters.map { it.title }) {
-                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                    val view = super.getView(position, convertView, parent)
-                    val titleView = view.findViewById<TextView>(R.id.text_chapter_title)
-                    val badgeView = view.findViewById<TextView>(R.id.text_latest_badge)
+            val sheetHeight = (resources.displayMetrics.heightPixels * 0.7).toInt()
 
-                    val realPosition = startIndex + position
-                    titleView.setTextColor(if (realPosition == currentIndex)
-                        resources.getColor(android.R.color.holo_blue_dark, theme)
-                    else
-                        resources.getColor(android.R.color.black, theme))
+            binding.scrimCatalog.visibility = View.VISIBLE
+            binding.layoutCatalogSheet.visibility = View.VISIBLE
 
-                    badgeView.visibility = if (realPosition == chapters.size - 1) View.VISIBLE else View.GONE
-                    return view
+            catalogAnimator?.cancel()
+            catalogAnimator = ValueAnimator.ofInt(0, sheetHeight).apply {
+                duration = 300
+                addUpdateListener { animator ->
+                    val value = animator.animatedValue as Int
+                    val params = binding.layoutCatalogSheet.layoutParams
+                    params.height = value
+                    binding.layoutCatalogSheet.layoutParams = params
                 }
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        isCatalogVisible = true
+                    }
+                })
+                start()
             }
 
-            val title = getString(R.string.chapter_list) + " (-/)"
-            AlertDialog.Builder(this)
-                .setTitle(title)
-                .setAdapter(adapter) { _, which ->
-                    viewModel.jumpToChapter(startIndex + which)
+            binding.recyclerCatalog.post {
+                (binding.recyclerCatalog.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(currentIndex, 0)
+            }
+        }
+    }
+
+    /**
+     * 隐藏悬浮目录抽屉
+     * 以动画形式滑出到底部
+     */
+    private fun hideCatalogSheet() {
+        catalogAnimator?.cancel()
+        catalogAnimator = ValueAnimator.ofInt(binding.layoutCatalogSheet.height, 0).apply {
+            duration = 250
+            addUpdateListener { animator ->
+                val value = animator.animatedValue as Int
+                val params = binding.layoutCatalogSheet.layoutParams
+                params.height = value
+                binding.layoutCatalogSheet.layoutParams = params
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    binding.scrimCatalog.visibility = View.GONE
+                    binding.layoutCatalogSheet.visibility = View.GONE
+                    isCatalogVisible = false
                 }
-                .setPositiveButton("下一页") { _, _ ->
-                    if (chapterListPage < totalPages - 1) {
-                        chapterListPage++
-                        showChapterListDialog()
-                    }
-                }
-                .setNegativeButton("上一页") { _, _ ->
-                    if (chapterListPage > 0) {
-                        chapterListPage--
-                        showChapterListDialog()
-                    }
-                }
-                .setNeutralButton(android.R.string.cancel, null)
-                .show()
+            })
+            start()
         }
     }
 
@@ -563,6 +610,14 @@ class ReaderActivity : AppCompatActivity() {
      */
     private fun dpToPx(dp: Float): Int {
         return (dp * resources.displayMetrics.density + 0.5f).toInt()
+    }
+
+    override fun onBackPressed() {
+        if (isCatalogVisible) {
+            hideCatalogSheet()
+            return
+        }
+        super.onBackPressed()
     }
 
     /**

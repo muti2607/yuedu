@@ -304,4 +304,69 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
+    <!-- 悬浮目录抽屉遮罩 -->
+    <View
+        android:id="@+id/scrim_catalog"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- 悬浮目录抽屉面板 -->
+    <LinearLayout
+        android:id="@+id/layout_catalog_sheet"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bottom_sheet_background"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:elevation="8dp">
+
+        <!-- 抽屉头部 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="8dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/catalog"
+                android:textColor="@android:color/black"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/btn_catalog_close"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="关闭"
+                android:src="@drawable/ic_arrow_back"
+                android:tint="@android:color/darker_gray"
+                android:rotation="90" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="#E0E0E0" />
+
+        <!-- 章节列表 -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler_catalog"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="8dp" />
+    </LinearLayout>
+
 </FrameLayout>

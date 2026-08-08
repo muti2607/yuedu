@@ -70,4 +70,11 @@ class BookDetailViewModel(
             _isInBookshelf.value = false
         }
     }
+
+    /**
+     * 获取当前书籍匹配的书源名称
+     */
+    fun getBookSourceName(): String {
+        return repository.getBookSourceNameByUrl(bookUrl)
+    }
 }

@@ -11,6 +11,7 @@ import coil.request.ImageRequest
 import com.example.yuedu.YueduApplication
 import com.example.yuedu.data.model.Book
 import com.example.yuedu.data.network.HtmlParser
+import com.example.yuedu.data.network.source.BookSource
 import com.example.yuedu.data.repository.BookRepository
 import kotlinx.coroutines.launch
 
@@ -31,8 +32,21 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
     private val _isSearching = MutableLiveData(false)
     val isSearching: LiveData<Boolean> = _isSearching
 
+    private val _currentSourceName = MutableLiveData<String>()
+    val currentSourceName: LiveData<String> = _currentSourceName
+
+    private val _allSources = MutableLiveData<List<BookSource>>(emptyList())
+    val allSources: LiveData<List<BookSource>> = _allSources
+
     init {
+        loadBookSources()
         loadPopularBooks()
+    }
+
+    /** 加载书源列表和当前书源信息 */
+    private fun loadBookSources() {
+        _allSources.value = repository.getAllBookSources()
+        _currentSourceName.value = repository.getCurrentBookSource().name
     }
 
     fun loadPopularBooks() {
@@ -135,7 +149,7 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
                 _searchResults.value = result.books
                 _books.value = emptyList()
                 if (result.books.isEmpty()) {
-                    _error.value = "未找到相关小说"
+                    _error.value = "未找到相关小说，请尝试切换书源"
                 }
             } catch (e: Exception) {
                 _error.value = "搜索失败：${e.message}"
@@ -144,6 +158,23 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
             }
         }
     }
+
+    /** 切换当前默认书源 */
+    fun switchBookSource(sourceId: String) {
+        repository.setCurrentBookSource(sourceId)
+        _currentSourceName.value = repository.getCurrentBookSource().name
+        // 刷新书源列表状态
+        _allSources.value = repository.getAllBookSources()
+    }
+
+    /** 切换书源启用状态 */
+    fun toggleSourceEnabled(sourceId: String, enabled: Boolean) {
+        repository.toggleBookSourceEnabled(sourceId, enabled)
+        _allSources.value = repository.getAllBookSources()
+    }
+
+    /** 获取当前书源名称 */
+    fun getCurrentSourceName(): String? = _currentSourceName.value
 }
 
 class DashboardViewModelFactory(private val repository: BookRepository) : ViewModelProvider.Factory {

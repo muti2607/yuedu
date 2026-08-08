@@ -26,10 +26,3 @@ class HomeViewModel(private val repository: BookRepository) : ViewModel() {
         }
     }
 }
-
-class HomeViewModelFactory(private val repository: BookRepository) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return HomeViewModel(repository) as T
-    }
-}

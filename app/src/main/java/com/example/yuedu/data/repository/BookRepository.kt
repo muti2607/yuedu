@@ -47,13 +47,59 @@ class BookRepository(private val database: AppDatabase) {
     }
 
     /**
-     * 搜索书籍
+     * 搜索书籍（多书源并行聚合搜索）
      *
      * @param keyword 搜索关键词
      * @return 搜索结果，包含书籍列表及分页信息
      */
     suspend fun searchBooks(keyword: String): HtmlParser.SearchResult {
         return HtmlParser.searchBooks(keyword)
+    }
+
+    /**
+     * 获取所有可用书源列表
+     *
+     * @return 书源列表
+     */
+    fun getAllBookSources(): List<com.example.yuedu.data.network.source.BookSource> {
+        return com.example.yuedu.data.network.BookSourceManager.getAllSources()
+    }
+
+    /**
+     * 获取已启用的书源列表
+     */
+    fun getEnabledBookSources(): List<com.example.yuedu.data.network.source.BookSource> {
+        return com.example.yuedu.data.network.BookSourceManager.getEnabledSources()
+    }
+
+    /**
+     * 获取当前默认书源
+     */
+    fun getCurrentBookSource(): com.example.yuedu.data.network.source.BookSource {
+        return com.example.yuedu.data.network.BookSourceManager.getCurrentSource()
+    }
+
+    /**
+     * 设置当前默认书源
+     *
+     * @param sourceId 书源ID
+     */
+    fun setCurrentBookSource(sourceId: String) {
+        com.example.yuedu.data.network.BookSourceManager.setCurrentSource(sourceId)
+    }
+
+    /**
+     * 切换书源启用状态
+     */
+    fun toggleBookSourceEnabled(sourceId: String, enabled: Boolean) {
+        com.example.yuedu.data.network.BookSourceManager.toggleSourceEnabled(sourceId, enabled)
+    }
+
+    /**
+     * 根据书籍URL获取匹配的书源名称
+     */
+    fun getBookSourceNameByUrl(bookUrl: String): String {
+        return com.example.yuedu.data.network.BookSourceManager.resolveSourceByUrl(bookUrl).name
     }
 
     // ========== 书籍详情 ==========

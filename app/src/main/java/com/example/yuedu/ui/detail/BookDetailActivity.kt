@@ -86,6 +86,10 @@ class BookDetailActivity : AppCompatActivity() {
                 binding.textCategory.text = it.category
                 binding.textLastChapter.text = "最新章节：${it.lastChapterTitle}"
 
+                // 显示书源信息
+                val sourceName = viewModel.getBookSourceName()
+                binding.textBookSource.text = "书源：$sourceName"
+
                 binding.toolbar.title = it.title
 
                 if (it.coverUrl.isNotBlank()) {

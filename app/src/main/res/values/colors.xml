@@ -8,17 +8,29 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-    <color name="orange_500">#FF6B3A</color>
-    <color name="orange_700">#E0552B</color>
-    <color name="orange_300">#FF8C5A</color>
+    <!-- 主色：低饱和赤陶橙，比纯橙更耐看 -->
+    <color name="orange_500">#E8663C</color>
+    <color name="orange_700">#C74E28</color>
+    <color name="orange_300">#F08A64</color>
 
-    <!-- 阅读器：暖白纸张 + 墨色正文，降低长时间阅读的刺眼感 -->
+    <!-- App 基础背景与文字 -->
+    <color name="app_bg">#FAF9F7</color>
+    <color name="app_bg_dark">#141312</color>
+    <color name="app_surface">#FFFFFF</color>
+    <color name="app_surface_dark">#1E1D1B</color>
+    <color name="text_primary">#1F1D1A</color>
+    <color name="text_primary_dark">#EDEAE5</color>
+    <color name="text_secondary">#8B857C</color>
+    <color name="text_secondary_dark">#9A948A</color>
+    <color name="divider">#EDEAE4</color>
+    <color name="divider_dark">#2C2A27</color>
+
+    <!-- 阅读器：暖白纸张 + 墨色正文 -->
     <color name="reader_bg">#FAF8F3</color>
     <color name="reader_bg_night">#1C1B1A</color>
     <color name="reader_text">#2B2A28</color>
     <color name="reader_text_night">#C9C5BE</color>
 
-    <!-- 顶/底栏用与正文一致的低色差纸色，去掉原来发黄的硬色块 -->
     <color name="reader_top_bar_bg">#F3F0E9</color>
     <color name="reader_bottom_bar_bg">#F3F0E9</color>
     <color name="reader_bottom_bar_divider">#E5E0D6</color>
@@ -26,7 +38,6 @@
     <color name="reader_bottom_bar_bg_night">#242320</color>
     <color name="reader_bottom_bar_divider_night">#33312E</color>
 
-    <!-- 次要文字（页码/时间/电量） -->
     <color name="reader_text_secondary">#8A857C</color>
     <color name="reader_text_secondary_night">#7E7A73</color>
 

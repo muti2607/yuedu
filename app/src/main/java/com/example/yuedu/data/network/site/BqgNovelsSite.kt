@@ -78,7 +78,7 @@ class BqgNovelsSite : BookSite() {
         Regex("""/book/(\d+)""").find(bookUrl)?.groupValues?.get(1)
 
     /** 章节地址按章节号拼：/book/{id}/{chapterNo} */
-    fun chapterUrlForIndex(bookUrl: String, chapterNo: Int): String? {
+    override fun chapterUrlForIndex(bookUrl: String, chapterNo: Int): String? {
         val id = bookId(bookUrl) ?: return null
         return "${baseUrl.trimEnd('/')}/book/$id/$chapterNo"
     }
@@ -101,6 +101,20 @@ class BqgNovelsSite : BookSite() {
             ?: doc.selectFirst(".text_tit")?.nextElementSibling()
             ?: return ""
         return cleanContent(body.html())
+    }
+
+    /** 正文页底部的「下一章 / 上一章」链接 */
+    override fun nextChapterUrl(doc: Document, currentChapterUrl: String): String? =
+        navUrl(doc, "下一章")
+
+    override fun prevChapterUrl(doc: Document, currentChapterUrl: String): String? =
+        navUrl(doc, "上一章")
+
+    private fun navUrl(doc: Document, keyword: String): String? {
+        val link = doc.select("a[href]").firstOrNull {
+            it.text().trim().startsWith(keyword) && Regex("""/book/\d+/\d+""").containsMatchIn(it.attr("href"))
+        } ?: return null
+        return absolute(link.attr("href").trim())
     }
 
     private fun absolute(href: String): String =

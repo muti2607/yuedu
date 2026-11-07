@@ -234,6 +234,23 @@ object HtmlParser {
     /** 离线兜底书单（全部来自 biquga，实测可访问） */
     fun getFallbackBooks(): List<Book> = fallbackBooks
 
+    /** 可用的分类列表（id、名称） */
+    fun getCategories(): List<Pair<Int, String>> = BiqugaSite.CATEGORIES
+
+    /**
+     * 按分类获取书籍列表。
+     *
+     * @param categoryId 分类 id（见 [getCategories]）
+     * @param page 页码，从 1 开始
+     */
+    suspend fun getBooksByCategory(categoryId: Int, page: Int = 1): List<Book> =
+        withContext(Dispatchers.IO) {
+            val site = BookSites.forUrl("https://www.biquga.com/") as BiqugaSite
+            runCatching {
+                parseItemCards(site.fetchDocument(site.categoryUrl(categoryId, page)), site)
+            }.getOrDefault(emptyList())
+        }
+
     private val fallbackBooks = listOf(
         Book(url = "https://www.biquga.com/56_56838/", title = "星门", author = "老鹰吃小鸡",
             description = "传说，在那古老的星空深处，伫立着一道血与火侵染的红色之门。", category = "玄幻小说"),

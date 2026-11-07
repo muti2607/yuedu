@@ -1,4 +1,4 @@
-package com.example.yuedu.ui.dashboard
+﻿package com.example.yuedu.ui.dashboard
 
 import android.content.Intent
 import android.os.Bundle
@@ -50,6 +50,8 @@ class DashboardFragment : Fragment() {
 
         binding.recyclerBooks.adapter = adapter
         binding.recyclerBooks.layoutManager = GridLayoutManager(requireContext(), 3)
+
+        setupCategoryChips()
 
         binding.searchView.setOnQueryTextListener(object : android.widget.SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
@@ -129,6 +131,51 @@ class DashboardFragment : Fragment() {
                 binding.textEmpty.text = error
                 binding.textEmpty.visibility = View.VISIBLE
             }
+        }
+
+        viewModel.selectedCategory.observe(viewLifecycleOwner) { selected ->
+            updateChipSelection(selected)
+        }
+    }
+
+    /**
+     * 生成分类胶囊：「推荐」+ 各分类。
+     * 用代码生成而不是在 XML 里写死，分类有增减时只改数据层即可。
+     */
+    private fun setupCategoryChips() {
+        val container = binding.layoutCategories
+        container.removeAllViews()
+
+        val items = listOf(0 to "推荐") + viewModel.categories
+        for ((id, name) in items) {
+            val chip = layoutInflater.inflate(R.layout.item_category_chip, container, false)
+                as android.widget.TextView
+            chip.text = name
+            chip.tag = id
+            chip.setOnClickListener {
+                // 点到已选中的分类就不重复请求
+                if (viewModel.selectedCategory.value != id) {
+                    viewModel.selectCategory(id)
+                }
+            }
+            container.addView(chip)
+        }
+        updateChipSelection(viewModel.selectedCategory.value ?: 0)
+    }
+
+    /** 更新胶囊选中态：选中项实心主色 + 白字 */
+    private fun updateChipSelection(selectedId: Int) {
+        val container = binding.layoutCategories
+        for (i in 0 until container.childCount) {
+            val chip = container.getChildAt(i) as? android.widget.TextView ?: continue
+            val isSelected = (chip.tag as? Int) == selectedId
+            chip.isSelected = isSelected
+            chip.setTextColor(
+                androidx.core.content.ContextCompat.getColor(
+                    requireContext(),
+                    if (isSelected) R.color.white else R.color.text_primary
+                )
+            )
         }
     }
 

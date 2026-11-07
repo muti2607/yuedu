@@ -39,11 +39,58 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
     private val _isSearching = MutableLiveData(false)
     val isSearching: LiveData<Boolean> = _isSearching
 
+    /** 当前选中的分类；0 表示「推荐」（热门书单） */
+    private val _selectedCategory = MutableLiveData(0)
+    val selectedCategory: LiveData<Int> = _selectedCategory
+
+    /** 可用分类（id、名称） */
+    val categories: List<Pair<Int, String>> = HtmlParser.getCategories()
+
     /** 正在进行的搜索任务，用于防抖与竞态取消 */
     private var searchJob: Job? = null
 
+    /** 分类切换任务，避免快速点击时旧结果覆盖新结果 */
+    private var categoryJob: Job? = null
+
     init {
         loadPopularBooks()
+    }
+
+    /**
+     * 切换分类。id = 0 回到推荐（热门书单）。
+     */
+    fun selectCategory(categoryId: Int) {
+        _selectedCategory.value = categoryId
+        _searchResults.value = emptyList()
+        _isSearching.value = false
+
+        if (categoryId == 0) {
+            loadPopularBooks()
+            return
+        }
+
+        categoryJob?.cancel()
+        categoryJob = viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = ""
+            try {
+                val list = HtmlParser.getBooksByCategory(categoryId)
+                if (list.isEmpty()) {
+                    _books.value = emptyList()
+                    _error.value = "该分类暂时没有内容"
+                } else {
+                    _books.value = list
+                    repository.cachePopularBooks(list)
+                    preCacheCovers(list)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _error.value = "加载失败：${e.message}"
+            } finally {
+                if (isActive) _isLoading.value = false
+            }
+        }
     }
 
     fun loadPopularBooks() {

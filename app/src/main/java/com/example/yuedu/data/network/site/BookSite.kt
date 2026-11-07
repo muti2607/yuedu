@@ -58,6 +58,24 @@ abstract class BookSite {
     /** 总目录页地址（供“全部章节”入口使用） */
     open fun catalogUrl(bookUrl: String): String = bookUrl
 
+    /**
+     * 从**正文页**里提取「下一章」地址。
+     *
+     * 这是最可靠的翻章方式：目录可能只给出前 100 章（biquga 就是如此），
+     * 但每一章正文页自带上一章/下一章导航，顺着走永远不会断。
+     * 返回 null 表示本站点不支持或已到最后一章。
+     */
+    open fun nextChapterUrl(doc: Document, currentChapterUrl: String): String? = null
+
+    /** 从正文页里提取「上一章」地址 */
+    open fun prevChapterUrl(doc: Document, currentChapterUrl: String): String? = null
+
+    /**
+     * 按章节序号推算章节地址（目录不完整时用来补充）。
+     * 返回 null 表示本站点无法推算。
+     */
+    open fun chapterUrlForIndex(bookUrl: String, chapterNo: Int): String? = null
+
     // ==================== 公共网络能力 ====================
 
     protected val client: OkHttpClient get() = SharedHttp.client

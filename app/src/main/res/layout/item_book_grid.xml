@@ -1,38 +1,72 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 书籍网格卡片：封面 + 书名 + 作者 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="center"
     android:orientation="vertical"
-    android:padding="6dp">
+    android:paddingStart="5dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="5dp"
+    android:paddingBottom="12dp">
 
-    <ImageView
-        android:id="@+id/img_cover"
-        android:layout_width="80dp"
-        android:layout_height="106dp"
-        android:background="@drawable/book_placeholder"
-        android:contentDescription="封面"
-        android:scaleType="centerCrop" />
+    <!-- 封面外框：圆角裁切 -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardBackgroundColor="@color/app_bg"
+        app:cardCornerRadius="6dp"
+        app:cardElevation="0dp">
+
+        <ImageView
+            android:id="@+id/img_cover"
+            android:layout_width="match_parent"
+            android:layout_height="148dp"
+            android:background="@drawable/book_placeholder"
+            android:contentDescription="封面"
+            android:scaleType="centerCrop" />
+    </androidx.cardview.widget.CardView>
 
     <TextView
         android:id="@+id/text_title"
-        android:layout_width="80dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="8dp"
         android:ellipsize="end"
-        android:maxLines="1"
-        android:textColor="@android:color/black"
+        android:lineSpacingExtra="1dp"
+        android:maxLines="2"
+        android:textColor="@color/text_primary"
         android:textSize="13sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        tools:text="书名标题" />
 
     <TextView
         android:id="@+id/text_author"
-        android:layout_width="80dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textColor="@android:color/darker_gray"
-        android:textSize="11sp" />
+        android:textColor="@color/text_secondary"
+        android:textSize="11sp"
+        tools:text="作者名" />
+
+    <!-- 阅读进度：仅在书架且有进度时显示 -->
+    <TextView
+        android:id="@+id/text_progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_tag"
+        android:paddingStart="6dp"
+        android:paddingTop="1dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="1dp"
+        android:textColor="@color/orange_700"
+        android:textSize="10sp"
+        android:visibility="gone"
+        tools:text="读到 98 章"
+        tools:visibility="visible" />
 
 </LinearLayout>

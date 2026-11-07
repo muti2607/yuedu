@@ -1,6 +1,7 @@
 package com.example.yuedu.ui.adapter
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
@@ -43,6 +44,16 @@ class BookGridAdapter(
         fun bind(book: Book) {
             binding.textTitle.text = book.title
             binding.textAuthor.text = book.author
+
+            // 阅读进度：只在书架里、并且确实读过才显示
+            val progress = book.lastReadChapterIndex
+            if (book.isInBookshelf && progress > 0) {
+                binding.textProgress.visibility = View.VISIBLE
+                binding.textProgress.text = "读到 ${progress + 1} 章"
+            } else {
+                binding.textProgress.visibility = View.GONE
+            }
+
             // 没有封面时必须先把上一张图清掉，否则 RecyclerView 复用 ViewHolder 时
             // 会继续显示别的书的封面（表现为“书名和封面不匹配”）
             if (book.coverUrl.isBlank()) {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分类胶囊按钮 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="34dp"
+    android:layout_marginEnd="8dp"
+    android:background="@drawable/bg_category_chip"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:textColor="@color/text_primary"
+    android:textSize="13sp"
+    tools:text="玄幻" />

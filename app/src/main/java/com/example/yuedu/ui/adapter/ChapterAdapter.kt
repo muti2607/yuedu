@@ -1,10 +1,11 @@
 package com.example.yuedu.ui.adapter
 
-import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
+import com.example.yuedu.R
 import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.databinding.ItemChapterBinding
 
@@ -54,13 +55,17 @@ class ChapterAdapter(
             val isCurrent = position == currentIndex
             val isLatest = position == chapters.size - 1
 
-            if (isCurrent) {
-                binding.textChapterTitle.setTextColor(Color.parseColor("#FF6B3A"))
-            } else {
-                binding.textChapterTitle.setTextColor(
-                    if (isNightMode) Color.parseColor("#CCCCCC") else Color.parseColor("#333333")
-                )
-            }
+            // 用主题色，跟随日/夜模式，不再写死 #FF6B3A / #333333
+            val highlight = ContextCompat.getColor(binding.root.context, R.color.orange_500)
+            val normalNight = ContextCompat.getColor(binding.root.context, R.color.text_primary_dark)
+            val normalDay = ContextCompat.getColor(binding.root.context, R.color.text_primary)
+            binding.textChapterTitle.setTextColor(
+                when {
+                    isCurrent -> highlight
+                    isNightMode -> normalNight
+                    else -> normalDay
+                }
+            )
 
             binding.textLatestBadge.visibility = if (isLatest) View.VISIBLE else View.GONE
 

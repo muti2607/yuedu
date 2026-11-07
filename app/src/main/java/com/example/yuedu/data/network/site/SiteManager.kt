@@ -105,7 +105,17 @@ object SiteManager {
             }
         }
 
-        collected.distinctBy { it.url }
+        val unique = collected.distinctBy { it.url }
+
+        // biquga 详情页只列前 100 章，但章节 ID 连续递增、meta 里有最新章节 ID，
+        // 直接展开成完整目录（否则读到第 100 章就"翻不动"了）
+        val expanded = if (site is BiqugaSite) {
+            site.expandFullCatalog(firstDoc, bookUrl, unique)
+        } else {
+            unique
+        }
+
+        expanded
             .mapIndexed { index, chapter -> chapter.copy(index = index) }
             .let { merged ->
                 // 部分站点（如 bqgnovels / biquge.mom）只渲染前后几十章，用总章节数补齐中间部分
@@ -126,6 +136,27 @@ object SiteManager {
             else -> null
         }
     }
+
+    /**
+     * 顺着正文页自带的「下一章 / 上一章」链接找相邻章节。
+     *
+     * 目录可能不完整（如 biquga 详情页只列 100 章），
+     * 但每一章正文页一定带相邻章节导航，用它翻章最可靠。
+     *
+     * @return 相邻章节 URL；没有则 null
+     */
+    suspend fun findAdjacentChapterUrl(chapterUrl: String, forward: Boolean): String? =
+        withContext(Dispatchers.IO) {
+            val site = BookSites.forUrl(chapterUrl)
+            val doc = try {
+                site.fetchDocument(chapterUrl)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return@withContext null
+            }
+            if (forward) site.nextChapterUrl(doc, chapterUrl) else site.prevChapterUrl(doc, chapterUrl)
+        }
 
     /** 章节正文（自动拼接站内分页） */
     suspend fun getChapterContent(chapterUrl: String): String = withContext(Dispatchers.IO) {

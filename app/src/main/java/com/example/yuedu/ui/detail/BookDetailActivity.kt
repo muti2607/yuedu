@@ -21,6 +21,13 @@ class BookDetailActivity : AppCompatActivity() {
     private lateinit var viewModel: BookDetailViewModel
     private lateinit var chapterAdapter: ChapterAdapter
 
+    /** 完整章节列表；详情页只渲染前 [PREVIEW_COUNT] 条，避免长书打开卡顿 */
+    private var allChapters: List<com.example.yuedu.data.model.Chapter> = emptyList()
+
+    companion object {
+        private const val PREVIEW_COUNT = 30
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityBookDetailBinding.inflate(layoutInflater)
@@ -36,6 +43,17 @@ class BookDetailActivity : AppCompatActivity() {
         setupControls()
         observeData()
         loadData()
+    }
+
+    /**
+     * 只渲染前 [PREVIEW_COUNT] 章。
+     *
+     * 详情页的列表禁用滚动并嵌在 NestedScrollView 里，
+     * 一次提交 600+ 项会全部创建 ViewHolder，打开详情页会明显卡顿。
+     * 想看完整目录可以在阅读页点「目录」。
+     */
+    private fun renderChapterPreview() {
+        chapterAdapter.submitList(allChapters.take(PREVIEW_COUNT))
     }
 
     private fun setupToolbar() {
@@ -93,13 +111,20 @@ class BookDetailActivity : AppCompatActivity() {
                 } else {
                     getString(R.string.source_site, source)
                 }
-                binding.textLastChapter.text = "最新章节：${it.lastChapterTitle}"
+                binding.textLastChapter.text = when {
+                    it.lastChapterTitle.isNotBlank() -> "最新章节：${it.lastChapterTitle}"
+                    it.lastUpdateTime.isNotBlank() -> "最后更新：${it.lastUpdateTime}"
+                    // 两个都拿不到就隐藏，避免出现「最新章节：」这样的空标签
+                    else -> ""
+                }
+                binding.textLastChapter.visibility =
+                    if (binding.textLastChapter.text.isNullOrBlank()) View.GONE else View.VISIBLE
 
                 binding.toolbar.title = it.title
 
-                // 有阅读进度时按钮文案改成“继续阅读”
+                // 有阅读进度时按钮文案改成"继续阅读"，并提示读到哪
                 binding.btnRead.text = if (it.lastReadChapterIndex > 0) {
-                    getString(R.string.continue_reading)
+                    "继续阅读 · 第 ${it.lastReadChapterIndex + 1} 章"
                 } else {
                     getString(R.string.start_reading)
                 }
@@ -116,7 +141,20 @@ class BookDetailActivity : AppCompatActivity() {
         }
 
         viewModel.chapters.observe(this) { chapters ->
-            chapterAdapter.submitList(chapters)
+            // 详情页的章节列表嵌在 NestedScrollView 里且不滚动，
+            // 一次塞 600+ 项会全部实例化，打开详情页明显卡顿。
+            // 这里只展示前若干章，其余引导到阅读页的目录抽屉。
+            allChapters = chapters
+            renderChapterPreview()
+
+            binding.textChapterCount.text = if (chapters.isEmpty()) {
+                getString(R.string.no_chapters)
+            } else if (chapters.size > PREVIEW_COUNT) {
+                // 明确告知只展示了一部分，完整目录在阅读页里
+                "共 ${chapters.size} 章 · 完整目录请进入阅读"
+            } else {
+                "共 ${chapters.size} 章"
+            }
         }
 
         viewModel.isLoading.observe(this) { loading ->

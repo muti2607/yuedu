@@ -86,6 +86,30 @@ class BiqugaSite : BookSite() {
     }
 
     /**
+     * 按「首章 ID + 偏移」补全整本目录。
+     *
+     * biquga 的详情页只列出前 100 章，而章节 ID 是严格连续递增的
+     * （实测 39982122、39982123… 每个 +1），最新章节 ID 在 meta 里也有。
+     * 因此可以从首章推出全部章节地址，不需要依赖会跳到别的书的 index_N.html。
+     */
+    fun expandFullCatalog(doc: Document, bookUrl: String, firstPage: List<Chapter>): List<Chapter> {
+        val first = firstPage.firstOrNull() ?: return firstPage
+        val firstId = Regex("""/(\d+)\.html""").find(first.url)
+            ?.groupValues?.get(1)?.toIntOrNull() ?: return firstPage
+        val lastId = lastChapterNumber(doc) ?: return firstPage
+        if (lastId <= firstId) return firstPage
+
+        val base = bookUrl.trimEnd('/')
+        val existing = firstPage.associateBy { it.url }.toMutableMap()
+        val all = mutableListOf<Chapter>()
+        for (id in firstId..lastId) {
+            val url = "$base/$id.html"
+            all.add(existing[url] ?: Chapter(bookUrl = bookUrl, title = "", url = url))
+        }
+        return all
+    }
+
+    /**
      * 不再做目录分页。
      *
      * 站点详情页本身已经给出约 100 章且链接真实可用；而 index_N.html
@@ -99,10 +123,80 @@ class BiqugaSite : BookSite() {
     /** 没有单独的全部目录页，直接用详情页 */
     override fun catalogUrl(bookUrl: String): String = bookUrl
 
+    /**
+     * 分类列表页：/list/{分类id}/1.html
+     *
+     * 实测 7 个分类：1玄幻 2修真 3都市 4历史 5网游 6科幻 7其他
+     */
+    fun categoryUrl(categoryId: Int, page: Int = 1): String =
+        "${baseUrl.trimEnd('/')}/list/$categoryId/$page.html"
+
+    companion object {
+        /** 分类 id → 名称 */
+        val CATEGORIES: List<Pair<Int, String>> = listOf(
+            1 to "玄幻",
+            2 to "修真",
+            3 to "都市",
+            4 to "历史",
+            5 to "网游",
+            6 to "科幻",
+            7 to "其他"
+        )
+    }
+
+    /**
+     * 章节 ID 是连续递增的（实测 39982122、39982123… 逐次 +1），
+     * 因此可以从详情页里首章 ID 直接推出后续任意一章的地址，
+     * 不依赖站点的目录分页（那个会跳到别的书）。
+     *
+     * 注意：章节正文页的 K 变量（uiiekp0do/kkehvov）才是权威的上一章/下一章，
+     * 这里的推算主要用于「目录只有前 100 章」时补全列表。
+     */
+    /**
+     * 章节 ID 连续递增，目录补全见 [expandFullCatalog]；
+     * 这里按序号解析交给 SiteManager 的 expandChaptersByIndex 处理。
+     */
+    override fun chapterUrlForIndex(bookUrl: String, chapterNo: Int): String? = null
+
+    /** 缓存每本书的首章 ID：/56_56838/ -> 39982122 */
+    /**
+     * 下一章：从正文页的翻页链接里取（比目录可靠，目录可能只有前 100 章）。
+     */
+    override fun nextChapterUrl(doc: Document, currentChapterUrl: String): String? {
+        return findNavUrl(doc, currentChapterUrl, isNext = true)
+    }
+
+    override fun prevChapterUrl(doc: Document, currentChapterUrl: String): String? {
+        return findNavUrl(doc, currentChapterUrl, isNext = false)
+    }
+
+    /**
+     * 从正文页里找上一章/下一章。
+     *
+     * 页面里有两套线索：
+     * 1. `<script>` 中的 `var uiiekp0do='/56_56838/xxx.html'`（上一章）
+     *    与 `var kkehvov='/56_56838/xxx_1.html'`（本章第2页，不是下一章）
+     * 2. `.read_btn` / 底部 `.nav` 里的「上一章 / 下一章」文字链接
+     * 优先用第 2 种（语义明确），第 1 种只在能确定是章节页时用。
+     */
+    private fun findNavUrl(doc: Document, currentChapterUrl: String, isNext: Boolean): String? {
+        val keyword = if (isNext) "下一章" else "上一章"
+        // DOM 链接：按文字匹配
+        val link = doc.select("a[href]").firstOrNull {
+            it.text().trim().startsWith(keyword) && it.attr("href").contains(".html")
+        }
+        if (link != null) {
+            val href = link.attr("href").trim()
+            if (href.isNotEmpty() && !href.startsWith("javascript")) {
+                return resolveUrl(href, currentChapterUrl)
+            }
+        }
+        return null
+    }
+
     /** 最新章节号：详情页 meta 里的 latest_chapter_url 形如 /56_56838/69753195.html */
     fun lastChapterNumber(doc: Document): Int? {
         val url = doc.selectFirst("meta[property=og:novel:latest_chapter_url]")?.attr("content")
-            ?: doc.selectFirst(".section-list li a[href$=.html]")?.attr("href")
             ?: return null
         return Regex("""/(\d+)\.html""").find(url)?.groupValues?.get(1)?.toIntOrNull()
     }

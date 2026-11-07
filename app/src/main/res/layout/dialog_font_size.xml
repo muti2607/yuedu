@@ -1,26 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:paddingStart="20dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="4dp">
 
-    <TextView
-        android:id="@+id/text_preview"
+    <!-- 预览区：浅底卡片，字号实时变化 -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center"
-        android:minHeight="60dp"
-        android:text="预览文字效果"
-        android:textColor="@android:color/black"
-        android:textSize="18sp" />
+        android:background="@drawable/bg_search_field"
+        android:paddingStart="16dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="18dp">
+
+        <TextView
+            android:id="@+id/text_preview"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.6"
+            android:text="读书破万卷，下笔如有神。"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp" />
+    </FrameLayout>
 
     <SeekBar
         android:id="@+id/seekbar_font_size"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="18dp"
         android:max="16"
         android:progress="6" />
 
@@ -34,6 +47,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="小"
+            android:textColor="@color/text_secondary"
             android:textSize="12sp" />
 
         <TextView
@@ -42,8 +56,8 @@
             android:layout_weight="1"
             android:gravity="end"
             android:text="大"
-            android:textSize="12sp" />
-
+            android:textColor="@color/text_secondary"
+            android:textSize="18sp" />
     </LinearLayout>
 
 </LinearLayout>

@@ -178,6 +178,40 @@ class BookRepository(private val database: AppDatabase) {
     private fun tocVersionKey(bookUrl: String): String = "toc_ver_$bookUrl"
 
     /**
+     * 顺着正文页的相邻章节链接找下一章/上一章。
+     *
+     * 目录不完整时（例如只解析到前 100 章）用它兜底，保证能继续往下读。
+     *
+     * @param chapterUrl 当前章节地址
+     * @param forward true=下一章，false=上一章
+     * @return 相邻章节；不存在时返回 null
+     */
+    suspend fun findAdjacentChapter(chapterUrl: String, forward: Boolean): Chapter? {
+        val url = com.example.yuedu.data.network.site.SiteManager
+            .findAdjacentChapterUrl(chapterUrl, forward) ?: return null
+        if (url == chapterUrl) return null
+        val bookUrl = Regex("""^(https?://[^/]+/\d+_\d+/)""").find(chapterUrl)
+            ?.groupValues?.get(1) ?: ""
+        return Chapter(bookUrl = bookUrl, title = "", url = url)
+    }
+
+    /**
+     * 取某本书「正在读的那一章」的标题。
+     *
+     * 注意：Book.lastChapterTitle 是站点给的「全书最新章节」（如“完本感言”），
+     * 不是用户读到哪一章。书架上的「继续阅读」必须用这个按索引查真实标题，
+     * 否则会显示成全书最后一章，用户会以为进度错了。
+     *
+     * @param bookUrl 书籍 URL
+     * @param chapterIndex 阅读进度索引
+     * @return 章节标题，查不到返回 null
+     */
+    suspend fun getReadingChapterTitle(bookUrl: String, chapterIndex: Int): String? {
+        val chapter = chapterDao.getChapterAtOffset(bookUrl, chapterIndex) ?: return null
+        return chapter.title.ifBlank { null }
+    }
+
+    /**
      * 获取章节列表的 Flow 流
      *
      * 用于响应式观察章节数据变化

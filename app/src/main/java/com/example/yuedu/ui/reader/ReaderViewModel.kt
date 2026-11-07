@@ -47,6 +47,8 @@ class ReaderViewModel(
     private val prefetchingSet = mutableSetOf<Int>()
     private var prefetchJob: Job? = null
     private var loadJob: Job? = null
+    /** 目录到头时「顺着正文页链接翻章」的任务，避免重复触发 */
+    private var navJob: Job? = null
     private val prefetchCount = 10
 
     init {
@@ -173,6 +175,10 @@ class ReaderViewModel(
         val current = _chapterIndex.value ?: 0
         if (current < currentChapters.size - 1) {
             loadChapter(current + 1)
+        } else {
+            // 目录到头了：尝试顺着正文页的「下一章」链接继续翻，
+            // 避免「目录只有 100 章，但书有 600 章」时彻底翻不动
+            followPageNavigation(forward = true)
         }
     }
 
@@ -180,11 +186,55 @@ class ReaderViewModel(
         val current = _chapterIndex.value ?: 0
         if (current > 0) {
             loadChapter(current - 1)
+        } else {
+            followPageNavigation(forward = false)
         }
     }
 
     fun jumpToChapter(index: Int) {
         loadChapter(index)
+    }
+
+    /**
+     * 目录到头时的兜底翻章：顺着正文页自带的「下一章 / 上一章」链接走。
+     *
+     * 解决「目录只有前 100 章，读到第 100 章就翻不动」的问题。
+     * 找到的新章节会追加/插入到 currentChapters，后续翻页重新走正常索引逻辑。
+     */
+    private fun followPageNavigation(forward: Boolean) {
+        val current = _chapterIndex.value ?: 0
+        val currentUrl = currentChapters.getOrNull(current)?.url ?: return
+        if (navJob?.isActive == true) return
+
+        navJob = viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val adjacent = repository.findAdjacentChapter(currentUrl, forward)
+                if (adjacent == null) {
+                    _chapterContent.value = if (forward) "已经是最后一章了" else "已经是第一章了"
+                    return@launch
+                }
+                // 去重后接到列表对应位置
+                if (currentChapters.none { it.url == adjacent.url }) {
+                    if (forward) {
+                        currentChapters.add(adjacent)
+                    } else {
+                        currentChapters.add(0, adjacent)
+                    }
+                }
+                val targetIndex = currentChapters.indexOfFirst { it.url == adjacent.url }
+                if (targetIndex >= 0) {
+                    _chapterList.value = currentChapters
+                    doLoadChapter(targetIndex)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _chapterContent.value = "翻章失败：${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     fun toggleBookshelf() {

@@ -1,18 +1,86 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.Yuedu" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <!-- 应用主题：浅色纸感 + 圆角控件 -->
+    <style name="Theme.Yuedu" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="colorPrimary">@color/orange_500</item>
         <item name="colorPrimaryVariant">@color/orange_700</item>
         <item name="colorOnPrimary">@color/white</item>
         <item name="colorSecondary">@color/orange_300</item>
         <item name="colorSecondaryVariant">@color/orange_700</item>
         <item name="colorOnSecondary">@color/black</item>
-        <item name="android:statusBarColor">@color/orange_500</item>
+
+        <item name="android:colorBackground">@color/app_bg</item>
+        <item name="android:windowBackground">@color/app_bg</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+
+        <item name="android:statusBarColor">@color/app_bg</item>
+        <item name="android:navigationBarColor">@color/app_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
+
+        <item name="materialButtonStyle">@style/Widget_Yuedu_Button</item>
     </style>
 
-    <style name="Theme.Yuedu.Reader" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <style name="Theme.Yuedu.Reader" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="colorPrimary">@color/reader_bg</item>
         <item name="android:statusBarColor">@color/reader_bg</item>
         <item name="android:windowFullscreen">true</item>
+    </style>
+
+    <!-- 圆角实心按钮 -->
+    <style name="Widget_Yuedu_Button" parent="Widget.MaterialComponents.Button">
+        <item name="cornerRadius">14dp</item>
+        <item name="android:letterSpacing">0.03</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minHeight">46dp</item>
+    </style>
+
+    <!-- 圆角描边按钮 -->
+    <style name="Widget_Yuedu_ButtonOutlined" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="cornerRadius">14dp</item>
+        <item name="android:letterSpacing">0.03</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minHeight">46dp</item>
+    </style>
+
+    <!-- 页面大标题 -->
+    <style name="TextAppearance_Yuedu_Title" parent="TextAppearance.MaterialComponents.Headline6">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <!-- 分组小标题 -->
+    <style name="TextAppearance_Yuedu_Section" parent="TextAppearance.MaterialComponents.Subtitle1">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 列表行 -->
+    <style name="Widget_Yuedu_SourceRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <!-- 细分隔线 -->
+    <style name="Widget_Yuedu_Divider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">0.5dp</item>
+        <item name="android:layout_marginStart">20dp</item>
+        <item name="android:layout_marginEnd">20dp</item>
+        <item name="android:background">@color/divider</item>
     </style>
 </resources>

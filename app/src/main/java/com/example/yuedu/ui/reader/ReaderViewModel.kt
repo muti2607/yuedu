@@ -77,7 +77,17 @@ class ReaderViewModel(
                 }
                 // 目标章节索引可能越界（进度来自旧数据），这里夹紧范围避免直接不出内容
                 val safeIndex = (_chapterIndex.value ?: 0).coerceIn(0, currentChapters.size - 1)
-                loadChapter(safeIndex)
+                // 注意：这里必须「不经过 loadJob」直接加载。
+                // loadChapter() 会先取消 loadJob，而当前协程正是被 viewModelScope 启动的，
+                // 若把 loadJob 指到本协程再取消，会把调用者自己取消掉 → 永远不出正文。
+                loadJob?.cancel()
+                loadJob = viewModelScope.launch {
+                    try {
+                        doLoadChapter(safeIndex)
+                    } finally {
+                        _isLoading.value = false
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -100,13 +110,22 @@ class ReaderViewModel(
      * 正确做法：先把要取消的任务取出来，再启动新任务，由新任务自己去做取消。
      */
     fun loadChapter(index: Int) {
-        if (index < 0 || index >= currentChapters.size) return
+        if (index < 0 || index >= currentChapters.size) {
+            // 索引非法时必须清掉加载态，否则界面会一直转圈
+            _isLoading.value = false
+            return
+        }
 
         val previous = loadJob
         loadJob = viewModelScope.launch {
-            // 在新协程里取消旧任务，避免取消到调用者自己
             previous?.cancel()
-            doLoadChapter(index)
+            try {
+                doLoadChapter(index)
+            } finally {
+                // 无论正常结束还是被取消，都要保证加载态被复位；
+                // 否则界面会永远停在「加载中...」
+                _isLoading.value = false
+            }
         }
     }
 

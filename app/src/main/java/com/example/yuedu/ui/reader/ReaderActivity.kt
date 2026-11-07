@@ -535,8 +535,12 @@ class ReaderActivity : AppCompatActivity() {
             offset = safeEnd
         }
 
-        if (pageList.isEmpty()) {
-            pageList.add(content)
+        if (pageList.isEmpty() || pageList.all { it.isBlank() }) {
+            // 内容为空时不渲染空白页：给一份可读的占位，避免出现「1/1 但什么都没有」
+            pageList.clear()
+            pageList.add(
+                content.ifBlank { "本章暂无内容\n\n可能是源站暂时不可用，点击屏幕中间可打开菜单重试或切换章节。" }
+            )
         }
 
         pages = pageList

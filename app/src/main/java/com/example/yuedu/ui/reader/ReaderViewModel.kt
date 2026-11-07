@@ -49,6 +49,8 @@ class ReaderViewModel(
     private var loadJob: Job? = null
     /** 目录到头时「顺着正文页链接翻章」的任务，避免重复触发 */
     private var navJob: Job? = null
+    /** 批量下载任务，支持中途取消 */
+    private var downloadJob: Job? = null
     private val prefetchCount = 10
 
     init {
@@ -254,46 +256,65 @@ class ReaderViewModel(
     }
 
     /**
-     * 批量下载所有章节。
+     * 批量下载所有章节（离线缓存）。
      *
-     * 原来的实现只把内容写进内存列表 currentChapters，既不落库也不刷新 UI，
-     * 退出阅读页后全部丢失，等于“每次都重新下载”。
-     * 现在通过 repository.persistChapterContent 真正写入 Room。
+     * 改进点：
+     * 1. 真正落库（原来只写内存，退出阅读页就丢）
+     * 2. 可取消：600 章的书下载很久，用户必须能中途停止
+     * 3. 跳过已缓存的章节，重复下载不会重头再来
      */
     fun downloadAllChapters() {
         if (_isDownloading.value == true) return
-        viewModelScope.launch {
+        downloadJob = viewModelScope.launch {
             _isDownloading.value = true
             val total = currentChapters.size
-            var downloaded = 0
+            var done = 0
             var failed = 0
+            var skipped = 0
             try {
                 for (i in currentChapters.indices) {
-                    _downloadProgress.value = "${downloaded + 1}/$total"
                     val chapter = currentChapters[i]
+                    // 已有内容就直接跳过，避免重复请求
+                    if (chapter.content.isNotEmpty()) {
+                        repository.persistChapterContent(chapter, chapter.content)
+                        skipped++
+                        done++
+                        _downloadProgress.value = "$done/$total"
+                        continue
+                    }
+                    _downloadProgress.value = "$done/$total"
                     try {
-                        if (chapter.content.isEmpty()) {
-                            val content = repository.getChapterContent(chapter)
+                        val content = repository.getChapterContent(chapter)
+                        if (content.isNotBlank()) {
                             currentChapters[i] = chapter.copy(content = content)
+                            done++
                         } else {
-                            // 已在内存里但库里可能还没写，统一走 repository 落库
-                            repository.persistChapterContent(chapter, chapter.content)
+                            failed++
                         }
-                        downloaded++
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
                         failed++
                     }
                 }
-                _downloadProgress.value = if (failed > 0) {
-                    "完成 $downloaded/$total（失败 $failed）"
-                } else {
-                    "完成 $downloaded/$total"
+                _downloadProgress.value = buildString {
+                    append("完成 $done/$total")
+                    if (skipped > 0) append("（已存在 $skipped）")
+                    if (failed > 0) append("（失败 $failed）")
                 }
+            } catch (e: CancellationException) {
+                // 用户主动取消：保留已下载的部分
+                _downloadProgress.value = "已取消，已缓存 $done/$total"
+                throw e
             } finally {
                 _isDownloading.value = false
             }
         }
+    }
+
+    /** 取消正在进行的批量下载 */
+    fun cancelDownload() {
+        downloadJob?.cancel()
+        downloadJob = null
     }
 }

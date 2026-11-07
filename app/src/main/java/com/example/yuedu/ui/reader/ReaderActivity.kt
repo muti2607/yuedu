@@ -192,25 +192,32 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         binding.btnDownload.setOnClickListener {
+            // 下载中再点一次 = 取消
+            if (viewModel.isDownloading.value == true) {
+                viewModel.cancelDownload()
+                Toast.makeText(this, "已取消下载", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             val total = viewModel.chapterList.value?.size ?: 0
             if (total == 0) {
                 Toast.makeText(this, "章节列表为空", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            Toast.makeText(this, "开始下载 $total 章...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "开始下载 $total 章，再次点击可取消", Toast.LENGTH_SHORT).show()
             viewModel.downloadAllChapters()
         }
 
-        binding.layoutComment.setOnClickListener {
-            Toast.makeText(this, "Comment", Toast.LENGTH_SHORT).show()
-        }
+        // 原先是 Toast("Comment") 的空占位，去掉误导性的假入口
+        binding.layoutComment.visibility = View.GONE
 
+        // 分享：调起系统分享，把书名+章节名+来源链接发出去
         binding.btnShare.setOnClickListener {
-            Toast.makeText(this, R.string.share, Toast.LENGTH_SHORT).show()
+            shareCurrentChapter()
         }
 
+        // 更多：弹出真实可用的菜单，而不是只弹一个 Toast
         binding.btnMore.setOnClickListener {
-            Toast.makeText(this, R.string.more, Toast.LENGTH_SHORT).show()
+            showMoreMenu()
         }
 
         binding.btnCatalog.setOnClickListener {
@@ -242,9 +249,11 @@ class ReaderActivity : AppCompatActivity() {
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 fromUserDrag = false
+                isDraggingSeekBar = true
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isDraggingSeekBar = false
                 if (fromUserDrag) {
                     val chapterCount = viewModel.chapterList.value?.size ?: return
                     if (chapterCount > 0) {
@@ -254,6 +263,96 @@ class ReaderActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    /** 分享当前章节信息（书名 + 章节 + 来源链接） */
+    private fun shareCurrentChapter() {
+        if (!::viewModel.isInitialized) return
+        val book = viewModel.book.value
+        val title = viewModel.chapterTitle.value.orEmpty()
+        val url = viewModel.book.value?.url.orEmpty()
+        val text = buildString {
+            if (book?.title?.isNotBlank() == true) append("《${book.title}》")
+            if (title.isNotBlank()) append(title)
+            if (url.isNotBlank()) {
+                if (isNotEmpty()) append("\n")
+                append(url)
+            }
+        }
+        if (text.isBlank()) {
+            Toast.makeText(this, "暂无可分享的内容", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(intent, "分享"))
+    }
+
+    /** 「更多」菜单：只放真正能用的功能 */
+    private fun showMoreMenu() {
+        val items = arrayOf("字体大小", "跳转到指定章节", "书源信息")
+        AlertDialog.Builder(this)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showFontSizeDialog()
+                    1 -> showJumpToChapterDialog()
+                    2 -> showSourceInfo()
+                }
+            }
+            .show()
+    }
+
+    /** 跳转到指定章节：章节多时滑动条不够精确，这里给个输入框 */
+    private fun showJumpToChapterDialog() {
+        val count = viewModel.chapterList.value?.size ?: 0
+        if (count == 0) {
+            Toast.makeText(this, "章节列表为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = "1 - $count"
+            setPadding(dpToPx(20f), dpToPx(12f), dpToPx(20f), dpToPx(12f))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("跳转到指定章节")
+            .setView(input)
+            .setPositiveButton("跳转") { _, _ ->
+                val n = input.text.toString().trim().toIntOrNull()
+                if (n == null || n < 1 || n > count) {
+                    Toast.makeText(this, "请输入 1 - $count 之间的章节号", Toast.LENGTH_SHORT).show()
+                } else {
+                    viewModel.jumpToChapter(n - 1)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 显示当前书源与书籍信息，便于排查「为什么这本书内容不对」 */
+    private fun showSourceInfo() {
+        val book = viewModel.book.value
+        val url = book?.url.orEmpty()
+        val source = if (url.isNotBlank()) {
+            com.example.yuedu.data.network.HtmlParser.siteNameOf(url)
+        } else {
+            "未知"
+        }
+        val msg = buildString {
+            append("书源：").append(source)
+            if (book?.title?.isNotBlank() == true) append("\n书名：").append(book.title)
+            if (book?.author?.isNotBlank() == true) append("\n作者：").append(book.author)
+            val count = viewModel.chapterList.value?.size ?: 0
+            append("\n章节数：").append(count)
+            if (url.isNotBlank()) append("\n地址：").append(url)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("书籍信息")
+            .setMessage(msg)
+            .setPositiveButton("知道了", null)
+            .show()
     }
 
     /**
@@ -340,14 +439,19 @@ class ReaderActivity : AppCompatActivity() {
      * 更新底部进度条和页码信息
      * 根据当前章节索引和总章节数计算进度百分比
      */
+    /** 用户正在拖动进度条时不回写，避免手指还没松开就被程序改掉 */
+    private var isDraggingSeekBar = false
+
     private fun updateProgressBar() {
         val chapterCount = viewModel.chapterList.value?.size ?: 0
         val currentChapter = (viewModel.chapterIndex.value ?: 0)
-        if (chapterCount > 1) {
-            val progress = (currentChapter.toFloat() / (chapterCount - 1) * 100).toInt()
-            binding.seekbarProgress.progress = progress
-        } else {
-            binding.seekbarProgress.progress = 0
+        if (!isDraggingSeekBar) {
+            if (chapterCount > 1) {
+                val progress = (currentChapter.toFloat() / (chapterCount - 1) * 100).toInt()
+                binding.seekbarProgress.progress = progress
+            } else {
+                binding.seekbarProgress.progress = 0
+            }
         }
         binding.textPageInfo.text = if (chapterCount > 0) {
             "${currentChapter + 1}/$chapterCount"

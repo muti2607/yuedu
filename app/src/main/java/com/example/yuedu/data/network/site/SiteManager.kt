@@ -26,6 +26,15 @@ object SiteManager {
     /** 正文最多多少页 */
     private const val MAX_CONTENT_PAGES = 30
 
+    /**
+     * 单本书允许的最大章节数。
+     *
+     * 这是个安全阀：部分站点能把章节 ID（千万级）误解析成「章节总数」，
+     * 一旦据此循环生成章节，会瞬间耗尽内存并崩溃（OutOfMemoryError）。
+     * 正常网文几千章已属极端，这里给到 5000 足够，超出即视为解析错误并丢弃。
+     */
+    private const val MAX_CHAPTERS = 5000
+
     /** 目录并发抓取的并行度。
      *
      * 原来是一页一页串行请求，一本 600 章的书要翻 7 页目录，
@@ -130,11 +139,14 @@ object SiteManager {
 
     /** 从入口页里读出“总章节数”，读不到返回 null */
     private fun totalChapterCount(site: BookSite, doc: org.jsoup.nodes.Document): Int? {
-        return when (site) {
+        val raw = when (site) {
             is BqgNovelsSite -> site.lastChapterNumber(doc)
             is BiqugeMomSite -> site.chapterCount(doc)
             else -> null
-        }
+        } ?: return null
+        // 站点若解析出离谱数字（例如把章节 ID 当成章节数），必须挡掉：
+        // 否则后面按 index 补齐会生成海量对象直接把内存撑爆。
+        return raw.takeIf { it in 1..MAX_CHAPTERS }
     }
 
     /**

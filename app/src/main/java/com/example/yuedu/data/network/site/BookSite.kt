@@ -150,7 +150,13 @@ abstract class BookSite {
             .replace(Regex("(?i)<script[\\s\\S]*?</script>"), "")
             .replace(Regex("(?i)<style[\\s\\S]*?</style>"), "")
             .replace(Regex("<[^>]+>"), "")
-        text = Jsoup.parse(text).text().let { htmlUnescape(text) }
+
+        // 注意：这里不要再做 Jsoup.parse(text).text() 的往返。
+        // 之前那行本身是无效代码（返回值被丢弃，用的还是原来的 text），
+        // 而且即便修正，Jsoup 的 text() 也会把文本里的换行转义成 &#10;，
+        // 正文里就会直接出现 "&#10;" 字样。
+        // 现在已经把标签替换成真换行，直接用 htmlUnescape 处理实体即可。
+        text = htmlUnescape(text)
         val lines = text.split('\n')
             .map { it.replace('\u00A0', ' ').trim() }
             .filter { it.isNotEmpty() }
@@ -167,6 +173,12 @@ abstract class BookSite {
             .replace("&gt;", ">")
             .replace("&quot;", "\"")
             .replace("&#39;", "'")
+            // Jsoup 的 text() 会把文本里的换行/制表等控制字符转义成数字实体，
+            // 表现为正文中直接出现 "&#10;" 字样。这里必须还原，否则阅读页会显示它。
+            .replace("&#10;", "\n")
+            .replace("&#13;", "\n")
+            .replace("&#9;", " ")
+            .replace("\u00A0", " ")
     }
 
     /** 常见广告/噪声行，避免混进正文 */

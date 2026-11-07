@@ -844,7 +844,14 @@ class ReaderActivity : AppCompatActivity() {
      */
     private fun formatParagraphs(raw: String): String {
         if (raw.isBlank()) return raw
-        return raw.split('\n')
+        // 段首缩进 + 段间空行：主流阅读器的排版。
+        // 部分站点会把换行写成 HTML 实体 &#10;，这里一并还原成真换行。
+        return raw
+            .replace("&#10;", "\n")
+            .replace("&nbsp;", " ")
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .split('\n')
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .joinToString("\n\n") { "\u3000\u3000$it" }

@@ -93,27 +93,20 @@ class BiqugaSite : BookSite() {
     }
 
     /**
-     * 按「首章 ID + 偏移」补全整本目录。
+     * 不再用「首章 ID + 连续偏移」补全目录。
      *
-     * biquga 的详情页只列出前 100 章，而章节 ID 是严格连续递增的
-     * （实测 39982122、39982123… 每个 +1），最新章节 ID 在 meta 里也有。
-     * 因此可以从首章推出全部章节地址，不需要依赖会跳到别的书的 index_N.html。
+     * 曾经这么做过，但假设是错的，而且极其危险：
+     *  1) 章节 ID 并不连续。实测《开天录》首章 13982253、最新章节 44648435，
+     *     中间差了 3000 多万 —— 按 firstId..lastId 循环会创建三千多万个
+     *     Chapter 对象，直接把 App 撑爆（java.lang.OutOfMemoryError）。
+     *  2) 即使在小范围内看似连续（13982253 → 13982255 → 13982257），
+     *     步长也不是 1，靠推算会得到大量并不存在的章节地址。
+     *
+     * 现在只使用详情页给出的真实目录（约 100 章），
+     * 更靠后的章节通过正文页的「下一章」链接继续翻（见 nextChapterUrl）。
      */
     fun expandFullCatalog(doc: Document, bookUrl: String, firstPage: List<Chapter>): List<Chapter> {
-        val first = firstPage.firstOrNull() ?: return firstPage
-        val firstId = Regex("""/(\d+)\.html""").find(first.url)
-            ?.groupValues?.get(1)?.toIntOrNull() ?: return firstPage
-        val lastId = lastChapterNumber(doc) ?: return firstPage
-        if (lastId <= firstId) return firstPage
-
-        val base = bookUrl.trimEnd('/')
-        val existing = firstPage.associateBy { it.url }.toMutableMap()
-        val all = mutableListOf<Chapter>()
-        for (id in firstId..lastId) {
-            val url = "$base/$id.html"
-            all.add(existing[url] ?: Chapter(bookUrl = bookUrl, title = "", url = url))
-        }
-        return all
+        return firstPage
     }
 
     /**

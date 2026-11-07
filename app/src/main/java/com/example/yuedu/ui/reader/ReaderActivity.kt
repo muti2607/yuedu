@@ -20,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
@@ -85,6 +86,7 @@ class ReaderActivity : AppCompatActivity() {
             setupViewPager()
             setupControls()
             setupCatalogSheet()
+            setupBackHandling()
             observeData()
         }
     }
@@ -749,12 +751,24 @@ class ReaderActivity : AppCompatActivity() {
         return px / resources.displayMetrics.scaledDensity
     }
 
-    override fun onBackPressed() {
-        if (isCatalogVisible) {
-            hideCatalogSheet()
-            return
-        }
-        super.onBackPressed()
+    /**
+     * 返回键：目录抽屉打开时先收起抽屉，否则才退出阅读页。
+     *
+     * onBackPressed() 在 API 33+ 已弃用，这里用 OnBackPressedDispatcher 注册，
+     * 行为不变但不会再产生弃用警告，也兼容后续 Android 版本。
+     */
+    @Suppress("unused")
+    private fun setupBackHandling() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (isCatalogVisible) {
+                    hideCatalogSheet()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
     }
 
     override fun onStop() {

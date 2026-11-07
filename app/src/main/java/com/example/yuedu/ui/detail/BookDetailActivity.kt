@@ -161,6 +161,18 @@ class BookDetailActivity : AppCompatActivity() {
             binding.progressLoading.visibility = if (loading) View.VISIBLE else View.GONE
         }
 
+        // 加载失败要明确告诉用户，不能留一片空白
+        viewModel.error.observe(this) { error ->
+            if (error.isNullOrEmpty()) return@observe
+            com.google.android.material.snackbar.Snackbar
+                .make(binding.root, error, com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
+                .setAction("重试") {
+                    viewModel.loadBookDetail()
+                    viewModel.loadChapterList()
+                }
+                .show()
+        }
+
         viewModel.isInBookshelf.observe(this) { inBookshelf ->
             if (inBookshelf) {
                 binding.btnBookshelf.text = "移除书架"

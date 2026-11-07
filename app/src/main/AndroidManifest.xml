@@ -16,14 +16,18 @@
         android:theme="@style/Theme.Yuedu"
         android:usesCleartextTraffic="true">
 
+        <!-- 阅读页锁定竖屏：旋转会重建 Activity，导致分页结果与阅读位置全部丢失 -->
         <activity
             android:name=".ui.reader.ReaderActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:theme="@style/Theme.Yuedu.Reader" />
 
         <activity
             android:name=".ui.detail.BookDetailActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
             android:name=".MainActivity"

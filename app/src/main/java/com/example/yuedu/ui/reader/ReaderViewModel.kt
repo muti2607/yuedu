@@ -212,18 +212,28 @@ class ReaderViewModel(
      *    现在只预加载下一章（用户最可能读的），2 章并发。
      * 3. 原来预加载是串行的。现在改成并发（2 章同时抓）。
      */
+    /** 当前预加载的目标章节索引（用于判断是否需要重新预加载） */
+    private var prefetchTargetIndex = -1
+
+    /**
+     * 预加载相邻章节正文。
+     *
+     * 修复：原来翻章后 prefetchJob.isActive=true 会跳过新预加载，
+     * 导致 +3、+4 章永远不被预取。现在跟踪预加载目标，
+     * 翻到新章节时取消旧任务重新预取。
+     */
     private fun prefetchAdjacentChapters(currentIndex: Int) {
-        // 不要 cancel 已有任务！让它继续跑。
-        // 只有在已有任务已完成时才启动新的补充。
-        if (prefetchJob?.isActive == true) return
+        if (prefetchJob?.isActive == true) {
+            if (prefetchTargetIndex == currentIndex) return
+            prefetchJob?.cancel()
+        }
+        prefetchTargetIndex = currentIndex
 
         prefetchJob = viewModelScope.launch {
-            // 只预加载接下来 2 章（用户最可能读的）
             val next = (currentIndex + 1)..minOf(currentChapters.size - 1, currentIndex + 2)
             val toFetch = next.filter { currentChapters[it].content.isEmpty() && !prefetchingSet.contains(it) }
             if (toFetch.isEmpty()) return@launch
 
-            // 2 章并发抓取
             toFetch.map { i ->
                 async {
                     prefetchingSet.add(i)
@@ -238,16 +248,9 @@ class ReaderViewModel(
             }.awaitAll()
         }
     }
-
-    /** 上一章 / 下一章的防抖时间戳，避免连点导致加载被反复取消 */
+    /** 上一章 / 下一章的防抖时间戳 */
     private var lastChapterNavAt = 0L
 
-    /**
-     * 翻章防抖：上一次翻章还在加载时忽略新的翻章请求。
-     *
-     * 之前没有这个保护，连着点「下一章」会不断 cancel 上一次加载、
-     * 又开新的加载，表现就是「点了没反应」或者停在原章。
-     */
     private fun canNavigateChapter(): Boolean {
         val now = System.currentTimeMillis()
         if (now - lastChapterNavAt < CHAPTER_NAV_DEBOUNCE_MS) return false

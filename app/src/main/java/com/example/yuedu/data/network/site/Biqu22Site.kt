@@ -30,6 +30,9 @@ class Biqu22Site : BookSite() {
         val lastChapter = doc.select(".synopsisArea_detail .lastchapter a").firstOrNull()?.text()?.trim() ?: ""
         val category = doc.select(".synopsisArea_detail p.sort").firstOrNull()?.text()?.trim()
             ?.replace("类别：", "")?.trim() ?: ""
+        // 状态：页面里的「状态：连载中」
+        val status = doc.select(".synopsisArea_detail p:contains(状态)").firstOrNull()?.text()?.trim()
+            ?.substringAfter("：")?.trim() ?: ""
         return Book(
             url = bookUrl,
             title = title,
@@ -37,7 +40,8 @@ class Biqu22Site : BookSite() {
             description = description,
             coverUrl = resolveUrl(cover),
             category = category,
-            lastChapterTitle = lastChapter
+            lastChapterTitle = lastChapter,
+            status = status
         )
     }
 

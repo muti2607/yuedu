@@ -65,6 +65,9 @@ class BiqugeMomSite : BookSite() {
         // #info-line 里第二个链接是分类
         val category = doc.select("#info-line a").getOrNull(1)?.text()?.trim() ?: ""
         val lastChapter = doc.selectFirst("#btn-latest[href]")?.text()?.trim() ?: ""
+        // 状态：优先 #book-data JSON，其次 info-line 里的文本
+        val status = jsonString(ldJson, "status")
+            ?: doc.select("#info-line .status").firstOrNull()?.text()?.trim().orEmpty()
 
         return Book(
             url = bookUrl,
@@ -73,7 +76,8 @@ class BiqugeMomSite : BookSite() {
             description = description,
             coverUrl = resolveUrl(cover),
             category = category,
-            lastChapterTitle = lastChapter
+            lastChapterTitle = lastChapter,
+            status = status
         )
     }
 

@@ -40,6 +40,8 @@ class BqgNovelsSite : BookSite() {
         val category = doc.select(".v-breadcrumbs a.v-breadcrumbs__item")
             .getOrNull(1)?.text()?.trim() ?: ""
         val lastChapter = doc.selectFirst(".detail_bt .last a")?.text()?.trim() ?: ""
+        // 作品状态：站点在 .state 里给出「连载中 / 已完结」
+        val status = doc.selectFirst(".state")?.text()?.trim().orEmpty()
 
         return Book(
             url = bookUrl,
@@ -48,7 +50,8 @@ class BqgNovelsSite : BookSite() {
             description = description,
             coverUrl = resolveUrl(cover),
             category = category,
-            lastChapterTitle = lastChapter
+            lastChapterTitle = lastChapter,
+            status = status
         )
     }
 

@@ -104,13 +104,13 @@ class BookDetailActivity : AppCompatActivity() {
                 binding.textTitle.text = it.title
                 binding.textAuthor.text = "作者：${it.author}"
                 binding.textDescription.text = it.description
-                // 分类 + 来源书源，直观看出这本书是从哪个站点抓的
+                // 分类 · 状态 · 来源书源
                 val source = HtmlParser.siteNameOf(it.url)
-                binding.textCategory.text = if (it.category.isNotBlank()) {
-                    "${it.category} · " + getString(R.string.source_site, source)
-                } else {
-                    getString(R.string.source_site, source)
-                }
+                val parts = mutableListOf<String>()
+                if (it.category.isNotBlank()) parts.add(it.category)
+                if (it.status.isNotBlank()) parts.add(it.status)
+                parts.add(getString(R.string.source_site, source))
+                binding.textCategory.text = parts.joinToString(" · ")
                 binding.textLastChapter.text = when {
                     it.lastChapterTitle.isNotBlank() -> "最新章节：${it.lastChapterTitle}"
                     it.lastUpdateTime.isNotBlank() -> "最后更新：${it.lastUpdateTime}"

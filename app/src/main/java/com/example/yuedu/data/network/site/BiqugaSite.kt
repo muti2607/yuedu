@@ -50,6 +50,12 @@ class BiqugaSite : BookSite() {
             ?: doc.selectFirst(".info p:containsOwn(最新章节) a")?.text()?.trim()
             ?: ""
 
+        // 状态：优先 og:novel:status，其次页面里的“状　态：已完结”
+        val status = doc.selectFirst("meta[property=og:novel:status]")?.attr("content")?.trim()
+            ?.ifBlank { null }
+            ?: doc.selectFirst(".info .fix p:contains(态)")?.text()?.substringAfter("：")?.trim()
+            ?: ""
+
         return Book(
             url = bookUrl,
             title = title,
@@ -57,7 +63,8 @@ class BiqugaSite : BookSite() {
             description = description,
             coverUrl = resolveUrl(cover),
             category = category,
-            lastChapterTitle = lastChapter
+            lastChapterTitle = lastChapter,
+            status = status
         )
     }
 

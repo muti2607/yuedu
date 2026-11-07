@@ -1,4 +1,4 @@
-﻿package com.example.yuedu.ui.dashboard
+package com.example.yuedu.ui.dashboard
 
 import android.content.Intent
 import android.os.Bundle
@@ -99,6 +99,9 @@ class DashboardFragment : Fragment() {
                 binding.textEmpty.visibility = View.GONE
                 binding.recyclerBooks.visibility = View.VISIBLE
                 adapter.submitList(bookList)
+                // 列表出来后立刻在后台预热前几本书的详情+目录，
+                // 用户点进去时目录已落库，避免在详情页干等 6~9 秒
+                viewModel.prefetchTopBooks(bookList)
             }
         }
 

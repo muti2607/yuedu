@@ -52,6 +52,14 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
     /** 分类切换任务，避免快速点击时旧结果覆盖新结果 */
     private var categoryJob: Job? = null
 
+    /** 书城列表的目录预热任务 */
+    private var prefetchJob: Job? = null
+
+    /** 预热前几本书的目录（多了会抢占带宽并可能触发反爬） */
+    private companion object {
+        const val PREFETCH_BOOKS = 3
+    }
+
     init {
         loadPopularBooks()
     }
@@ -133,6 +141,42 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
                 }
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * 空闲时预热目录。
+     *
+     * biquga 的详情页本身极慢（实测单次 6~9 秒，页面仅 23KB，是站点侧建页慢），
+     * 而目录只存在于详情页里，用户点进详情必然要等这么久。
+     *
+     * 这里在书城列表加载完成后，立刻在后台顺序预热前几本书的详情+目录：
+     * 用户浏览列表的这段时间，目录已经落库，点进去就是秒开。
+     * 只预热少量（PREFETCH_BOOKS）避免抢占带宽和触发反爬。
+     */
+    /**
+     * 空闲时预热目录。
+     *
+     * biquga 的详情页本身极慢（单次 6~9 秒，页面仅 23KB，是站点侧建页慢）。
+     * 这里在书城列表出来后，立刻在后台预热第 1 本书的详情+目录。
+     *
+     * 只预热第 1 本（最可能被点击）：并发预热 3 本会被站点限流反而更慢（13.5s/本），
+     * 串行预热第 1 本只要 6~9 秒。
+     * 允许列表更新时取消旧任务重新预热（旧列表可能不是用户看到的书）。
+     */
+    fun prefetchTopBooks(books: List<Book>) {
+        prefetchJob?.cancel()
+        prefetchJob = viewModelScope.launch {
+            val first = books.firstOrNull() ?: return@launch
+            if (repository.hasFreshChapterList(first.url)) return@launch
+            try {
+                repository.getBookDetail(first.url)
+                repository.getChapterList(first.url)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 预热失败无所谓，用户点进去会重新加载
             }
         }
     }

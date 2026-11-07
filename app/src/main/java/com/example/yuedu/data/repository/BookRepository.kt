@@ -159,6 +159,15 @@ class BookRepository(private val database: AppDatabase) {
      * “缓存条目非空且书籍在书架/最近打开过”近似：直接比较时间戳不可行，
      * 因此采用轻量方案——把上次抓取时间记在 SharedPreferences。
      */
+    /**
+     * 该书是否已有「新鲜」的目录缓存。
+     * 供书城预热使用：已有新鲜目录就不必再为它联网。
+     */
+    suspend fun hasFreshChapterList(bookUrl: String): Boolean {
+        val cached = chapterDao.getChaptersByBookUrlSync(bookUrl)
+        return cached.isNotEmpty() && isChapterCacheFresh(cached)
+    }
+
     private fun isChapterCacheFresh(cached: List<Chapter>): Boolean {
         if (cached.isEmpty()) return false
         val bookUrl = cached.first().bookUrl

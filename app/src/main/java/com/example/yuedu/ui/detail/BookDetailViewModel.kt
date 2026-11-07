@@ -57,6 +57,7 @@ class BookDetailViewModel(
         viewModelScope.launch {
             try {
                 _chapters.value = repository.getChapterList(bookUrl)
+                prefetchFirstChapters()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -96,6 +97,27 @@ class BookDetailViewModel(
                 throw e
             } catch (e: Exception) {
                 _error.value = "移出书架失败：${e.message ?: "网络异常"}"
+            }
+        }
+    }
+
+    /**
+     * 预取前 3 章正文。
+     *
+     * 详情页打开后立刻在后台抓前几章正文，用户点「开始阅读」时第一屏秒出。
+     * 站点正文页本身快（0.25s/章），预取 3 章只需不到 1 秒。
+     */
+    fun prefetchFirstChapters() {
+        viewModelScope.launch {
+            val chapters = _chapters.value ?: return@launch
+            for (ch in chapters.take(3)) {
+                try {
+                    if (ch.content.isEmpty()) {
+                        repository.getChapterContent(ch)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) { }
             }
         }
     }

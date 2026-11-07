@@ -9,6 +9,8 @@ import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.data.repository.BookRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -194,33 +196,40 @@ class ReaderViewModel(
         const val CHAPTER_NAV_DEBOUNCE_MS = 600L
     }
 
+    /**
+     * 预加载相邻章节正文。
+     *
+     * 修复三个性能问题：
+     * 1. 原来每次翻章都 cancel 预加载任务 → 用户翻到哪预加载就被杀到哪，永远追不上。
+     *    现在让预加载持续运行，翻章只在需要新章节时补充。
+     * 2. 原来一次预加载前后各 10 章（20 章），串行执行跑不完。
+     *    现在只预加载下一章（用户最可能读的），2 章并发。
+     * 3. 原来预加载是串行的。现在改成并发（2 章同时抓）。
+     */
     private fun prefetchAdjacentChapters(currentIndex: Int) {
-        prefetchJob?.cancel()
+        // 不要 cancel 已有任务！让它继续跑。
+        // 只有在已有任务已完成时才启动新的补充。
+        if (prefetchJob?.isActive == true) return
+
         prefetchJob = viewModelScope.launch {
-            val chaptersToFetch = mutableListOf<Int>()
+            // 只预加载接下来 2 章（用户最可能读的）
+            val next = (currentIndex + 1)..minOf(currentChapters.size - 1, currentIndex + 2)
+            val toFetch = next.filter { currentChapters[it].content.isEmpty() && !prefetchingSet.contains(it) }
+            if (toFetch.isEmpty()) return@launch
 
-            for (i in (currentIndex + 1)..minOf(currentChapters.size - 1, currentIndex + prefetchCount)) {
-                if (currentChapters[i].content.isEmpty() && !prefetchingSet.contains(i)) {
-                    chaptersToFetch.add(i)
+            // 2 章并发抓取
+            toFetch.map { i ->
+                async {
+                    prefetchingSet.add(i)
+                    try {
+                        val content = repository.getChapterContent(currentChapters[i])
+                        if (content.isNotBlank()) {
+                            currentChapters[i] = currentChapters[i].copy(content = content)
+                        }
+                    } catch (_: Exception) { }
+                    prefetchingSet.remove(i)
                 }
-            }
-            for (i in maxOf(0, currentIndex - prefetchCount) until currentIndex) {
-                if (currentChapters[i].content.isEmpty() && !prefetchingSet.contains(i)) {
-                    chaptersToFetch.add(i)
-                }
-            }
-
-            for (i in chaptersToFetch) {
-                prefetchingSet.add(i)
-                try {
-                    val content = repository.getChapterContent(currentChapters[i])
-                    // 失败(空串)不写缓存，下次还能重试
-                    if (content.isNotBlank()) {
-                        currentChapters[i] = currentChapters[i].copy(content = content)
-                    }
-                } catch (_: Exception) { }
-                prefetchingSet.remove(i)
-            }
+            }.awaitAll()
         }
     }
 

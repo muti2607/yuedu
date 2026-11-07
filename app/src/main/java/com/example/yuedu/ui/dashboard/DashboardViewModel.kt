@@ -172,7 +172,14 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
             if (repository.hasFreshChapterList(first.url)) return@launch
             try {
                 repository.getBookDetail(first.url)
-                repository.getChapterList(first.url)
+                val chapters = repository.getChapterList(first.url)
+                // 预取前 3 章正文：站点正文页快（0.25s/章），3 章不到 1 秒。
+                // 这样用户点「开始阅读」时第一屏秒出，不用等 2-3 秒。
+                for (ch in chapters.take(3)) {
+                    try {
+                        if (ch.content.isEmpty()) repository.getChapterContent(ch)
+                    } catch (_: Exception) { }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

@@ -9,6 +9,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import com.example.yuedu.R
 import com.example.yuedu.YueduApplication
 import com.example.yuedu.databinding.FragmentDashboardBinding
 import com.example.yuedu.ui.adapter.BookGridAdapter
@@ -54,6 +55,9 @@ class DashboardFragment : Fragment() {
             override fun onQueryTextSubmit(query: String?): Boolean {
                 query?.let {
                     if (it.isNotBlank()) {
+                        // 搜索会依次尝试多个书源，先给个提示避免以为卡住
+                        binding.textEmpty.text = getString(R.string.searching_multiple_sites)
+                        binding.textEmpty.visibility = View.VISIBLE
                         viewModel.search(it)
                     }
                 }
@@ -80,7 +84,15 @@ class DashboardFragment : Fragment() {
         }
 
         viewModel.books.observe(viewLifecycleOwner) { bookList ->
-            if (bookList.isNotEmpty()) {
+            // 搜索时 books 会被清空；此时不能把列表藏起来，否则退出搜索后一片空白、
+            // 也无法回到书城列表（原来只有 isNotEmpty() 才更新 UI，空列表等于卡死）
+            if (viewModel.isSearching.value == true) return@observe
+            if (bookList.isEmpty()) {
+                binding.progressLoading.visibility = View.GONE
+                binding.recyclerBooks.visibility = View.GONE
+                binding.textEmpty.text = getString(R.string.bookstore_empty)
+                binding.textEmpty.visibility = View.VISIBLE
+            } else {
                 binding.progressLoading.visibility = View.GONE
                 binding.textEmpty.visibility = View.GONE
                 binding.recyclerBooks.visibility = View.VISIBLE
@@ -92,6 +104,7 @@ class DashboardFragment : Fragment() {
             if (viewModel.isSearching.value == true) {
                 binding.progressLoading.visibility = View.GONE
                 if (result.isEmpty()) {
+                    binding.textEmpty.text = getString(R.string.search_result_empty)
                     binding.textEmpty.visibility = View.VISIBLE
                     binding.recyclerBooks.visibility = View.GONE
                 } else {
@@ -105,6 +118,8 @@ class DashboardFragment : Fragment() {
         viewModel.isLoading.observe(viewLifecycleOwner) { loading ->
             if (loading) {
                 binding.progressLoading.visibility = View.VISIBLE
+            } else {
+                binding.progressLoading.visibility = View.GONE
             }
         }
 

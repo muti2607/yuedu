@@ -1,4 +1,4 @@
-﻿package com.example.yuedu.ui.reader
+package com.example.yuedu.ui.reader
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -48,13 +48,18 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var viewModel: ReaderViewModel
     private var isNightMode = false
     private var currentFontSize = 18f
-    private var isControlsVisible = true
+    // 布局里顶/底栏默认 gone（沉浸式阅读），这里必须同步为 false，
+    // 否则第一次点屏幕中间只会「隐藏」而不是「唤出」
+    private var isControlsVisible = false
     private var pages = listOf<String>()
     private var isNavigatingChapter = false
     private var currentPageIndex = 0
     private var isCatalogVisible = false
     private var catalogAnimator: ValueAnimator? = null
     private lateinit var catalogAdapter: ChapterAdapter
+
+    /** 行距倍数，与分页计算保持一致，避免排版和显示对不上 */
+    private val lineSpacing = 1.8f
 
     /**
      * Activity 创建时初始化
@@ -254,21 +259,27 @@ class ReaderActivity : AppCompatActivity() {
      * 监听章节内容、标题、加载状态、章节索引、章节列表、收藏状态、下载进度等
      */
     private fun observeData() {
+        // 记录上一次渲染的章节序号，用来区分「换章」和「改字号重排」
+        var lastRenderedChapter = -1
         viewModel.chapterContent.observe(this) { content ->
             binding.progressLoading.visibility = View.GONE
+            val chapter = viewModel.chapterIndex.value ?: 0
+            val isNewChapter = chapter != lastRenderedChapter
+            lastRenderedChapter = chapter
             binding.viewpagerReader.post {
-                paginateAndDisplay(content)
+                paginateAndDisplay(content, resetToFirstPage = isNewChapter)
             }
         }
 
         viewModel.chapterTitle.observe(this) { title ->
-            binding.textChapterTitle.text = title
+            // 章节名交给每页顶部的标题栏渲染（displayPages 会重建 adapter），
+            // 底部提示条只用于下载/字号这类临时状态，不再重复显示章节名
+            updatePageTitles(title)
         }
 
         viewModel.isLoading.observe(this) { loading ->
-            if (loading) {
-                binding.progressLoading.visibility = View.VISIBLE
-            }
+            // 原来只处理 true 不处理 false，加载圈一旦出现就再也不消失
+            binding.progressLoading.visibility = if (loading) View.VISIBLE else View.GONE
         }
 
         viewModel.chapterIndex.observe(this) { index ->
@@ -290,18 +301,37 @@ class ReaderActivity : AppCompatActivity() {
 
         viewModel.downloadProgress.observe(this) { progress ->
             if (progress.isNotEmpty()) {
-                binding.textChapterTitle.visibility = View.VISIBLE
-                binding.textChapterTitle.text = "下载中: $progress"
+                showReaderStatus("下载中: $progress")
             }
         }
 
         viewModel.isDownloading.observe(this) { downloading ->
             if (!downloading && viewModel.downloadProgress.value?.isNotEmpty() == true) {
                 binding.textChapterTitle.postDelayed({
-                    binding.textChapterTitle.visibility = View.GONE
+                    restoreChapterTitle()
                 }, 2000)
             }
         }
+    }
+
+    /**
+     * textChapterTitle 是底部的临时状态条（下载中 / 字号预览）。
+     * 章节名由每页顶部的标题栏负责，这里不再重复显示章节名，
+     * 状态结束后直接隐藏即可。
+     */
+    private fun restoreChapterTitle() {
+        binding.textChapterTitle.visibility = View.GONE
+    }
+
+    /** 显示一条临时状态提示（下载进度、字号预览等） */
+    private fun showReaderStatus(text: String) {
+        binding.textChapterTitle.text = text
+        binding.textChapterTitle.visibility = View.VISIBLE
+    }
+
+    /** 章节名变化时同步到每一页顶部的标题栏 */
+    private fun updatePageTitles(title: String) {
+        (binding.viewpagerReader.adapter as? ReaderPagerAdapter)?.updateChapterTitle(title)
     }
 
     /**
@@ -344,25 +374,32 @@ class ReaderActivity : AppCompatActivity() {
      * 使用 StaticLayout 计算每行文字位置，根据可用高度切割内容
      * 减去半行高度让内容底部向上提半行，避免文字紧贴底部
      */
-    private fun paginateAndDisplay(content: String) {
+    private fun paginateAndDisplay(rawContent: String, resetToFirstPage: Boolean = false) {
+        // 段首缩进 + 段间空行：主流阅读器的排版。
+        // 必须在分页「之前」格式化，让 StaticLayout 计算与 TextView 显示用同一份文本，
+        // 否则切页位置会错位。
+        val content = formatParagraphs(rawContent)
         val paint = TextPaint()
-        paint.textSize = dpToPx(currentFontSize).toFloat()
+        paint.textSize = spToPx(currentFontSize).toFloat()
         paint.isAntiAlias = true
         paint.typeface = Typeface.SERIF
 
-        val pageWidth = binding.viewpagerReader.width - dpToPx(20f) * 2
+        // 与 onCreateViewHolder 里的 padding 保持一致：左右各 24dp
+        val pageWidth = binding.viewpagerReader.width - dpToPx(24f) * 2
         val fullPageHeight = binding.viewpagerReader.height
-        val titleHeight = dpToPx(36f)
+        // 标题区 22dp 上留白 + 13sp 文字 + 14dp 下留白，留出余量避免文字被裁
+        val titleHeight = dpToPx(56f)
 
         if (pageWidth <= 0 || fullPageHeight <= 0) {
             pages = listOf(content)
-            displayPages()
+            displayPages(resetToFirstPage)
             return
         }
 
-        fun buildLayout(text: String, height: Int): StaticLayout {
+        fun buildLayout(text: String): StaticLayout {
             return StaticLayout.Builder.obtain(text, 0, text.length, paint, pageWidth)
-                .setLineSpacing(dpToPx(1.8f * currentFontSize - currentFontSize).toFloat(), 1f)
+                // 行距用 “字号(px) × 1.8”，不能直接拿 sp 数值当 px 用，否则行距几乎为 0
+                .setLineSpacing(spToPx(currentFontSize) * (lineSpacing - 1f), 1f)
                 .setMaxLines(Int.MAX_VALUE)
                 .build()
         }
@@ -370,12 +407,12 @@ class ReaderActivity : AppCompatActivity() {
         val pageList = mutableListOf<String>()
         var offset = 0
         val textLength = content.length
-        val footerMargin = dpToPx(8f)
-        val halfLineHeight = dpToPx(currentFontSize * 0.5f)
+        val footerMargin = dpToPx(20f)
+        val halfLineHeight = spToPx(currentFontSize * 0.5f)
         val usableHeight = fullPageHeight - titleHeight - footerMargin - halfLineHeight
 
         while (offset < textLength) {
-            val layout = buildLayout(content.substring(offset), usableHeight)
+            val layout = buildLayout(content.substring(offset))
             val totalLines = layout.lineCount
             if (totalLines == 0) break
 
@@ -386,9 +423,10 @@ class ReaderActivity : AppCompatActivity() {
             if (endLine == 0) endLine = 1
 
             val endOffset = offset + layout.getLineStart(endLine)
-            val pageText = content.substring(offset, minOf(endOffset, textLength)).trimEnd()
+            val safeEnd = maxOf(endOffset, offset + 1).coerceAtMost(textLength)
+            val pageText = content.substring(offset, safeEnd).trimEnd()
             pageList.add(pageText)
-            offset = minOf(endOffset, textLength)
+            offset = safeEnd
         }
 
         if (pageList.isEmpty()) {
@@ -396,22 +434,31 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         pages = pageList
-        currentPageIndex = 0
-        displayPages()
+        displayPages(resetToFirstPage)
     }
 
     /**
      * 将分好页的内容更新到适配器并显示
      * 同时应用主题和字体大小
      */
-    private fun displayPages() {
+    private fun displayPages(resetToFirstPage: Boolean = false) {
         isNavigatingChapter = true
         val chapterTitle = viewModel.chapterTitle.value ?: ""
         val adapter = ReaderPagerAdapter(pages, chapterTitle) { pageView ->
             // Click handling is done in dispatchTouchEvent
         }
         binding.viewpagerReader.adapter = adapter
-        binding.viewpagerReader.setCurrentItem(0, false)
+        // 换章(resetToFirstPage=true)必须回到第 0 页；
+        // 只有「改字号重排」才保留当前页位。
+        // 之前一律保持 currentPageIndex，换章后被 clamp 到新章节末页，
+        // 表现为「翻来翻去都是同一章」。
+        val targetPage = if (resetToFirstPage) {
+            0
+        } else {
+            currentPageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        }
+        binding.viewpagerReader.setCurrentItem(targetPage, false)
+        currentPageIndex = targetPage
         isNavigatingChapter = false
         applyTheme()
         applyFontSize()
@@ -434,28 +481,31 @@ class ReaderActivity : AppCompatActivity() {
         } else {
             resources.getColor(R.color.reader_bg, theme)
         }
-        val topBarBg = if (isNightMode) {
-            resources.getColor(R.color.reader_top_bar_bg_night, theme)
+        val topBarBgNight = resources.getColor(R.color.reader_top_bar_bg_night, theme)
+        val bottomBarBgNight = resources.getColor(R.color.reader_bottom_bar_bg_night, theme)
+        val secondaryColor = if (isNightMode) {
+            resources.getColor(R.color.reader_text_secondary_night, theme)
         } else {
-            resources.getColor(R.color.reader_top_bar_bg, theme)
-        }
-        val bottomBarBg = if (isNightMode) {
-            resources.getColor(R.color.reader_bottom_bar_bg_night, theme)
-        } else {
-            resources.getColor(R.color.reader_bottom_bar_bg, theme)
+            resources.getColor(R.color.reader_text_secondary, theme)
         }
         adapter.updateColors(textColor, bgColor)
         binding.readerContainer.setBackgroundColor(bgColor)
-        binding.layoutTopBar.setBackgroundColor(topBarBg)
-        binding.layoutBottomBar.setBackgroundColor(bottomBarBg)
-        binding.textReaderFooter.setTextColor(
-            if (isNightMode) {
-                resources.getColor(R.color.reader_text_night, theme)
-            } else {
-                resources.getColor(android.R.color.darker_gray, theme)
-            }
-        )
+        // 用纯色覆盖会破坏圆角/渐变 drawable，这里只给夜间模式换深色背景资源，
+        // 日间保留 XML 里的渐变与圆角卡片
+        if (isNightMode) {
+            binding.layoutTopBar.setBackgroundColor(topBarBgNight)
+            binding.layoutBottomBar.setBackgroundColor(bottomBarBgNight)
+        } else {
+            binding.layoutTopBar.background = androidx.core.content.ContextCompat
+                .getDrawable(this, R.drawable.reader_bar_gradient_top)
+            binding.layoutBottomBar.background = androidx.core.content.ContextCompat
+                .getDrawable(this, R.drawable.reader_toolbar_background)
+        }
+        binding.textReaderFooter.setTextColor(secondaryColor)
         binding.textReaderFooter.setBackgroundColor(bgColor)
+        binding.textChapterTitle.setTextColor(secondaryColor)
+        binding.textChapterTitle.setBackgroundColor(bgColor)
+        binding.textPageInfo.setTextColor(secondaryColor)
         if (::catalogAdapter.isInitialized) {
             catalogAdapter.setNightMode(isNightMode)
         }
@@ -466,7 +516,7 @@ class ReaderActivity : AppCompatActivity() {
      */
     private fun applyFontSize() {
         val adapter = binding.viewpagerReader.adapter as? ReaderPagerAdapter ?: return
-        adapter.updateTextSize(dpToPx(currentFontSize))
+        adapter.updateTextSize(spToPx(currentFontSize))
     }
 
     /**
@@ -476,11 +526,12 @@ class ReaderActivity : AppCompatActivity() {
         if (isControlsVisible) {
             binding.layoutTopBar.visibility = View.GONE
             binding.layoutBottomBar.visibility = View.GONE
+            // 章节名/下载提示条是临时状态，隐藏控制栏时一并收起
             binding.textChapterTitle.visibility = View.GONE
         } else {
             binding.layoutTopBar.visibility = View.VISIBLE
             binding.layoutBottomBar.visibility = View.VISIBLE
-            binding.textChapterTitle.visibility = View.VISIBLE
+            restoreChapterTitle()
         }
         isControlsVisible = !isControlsVisible
     }
@@ -606,8 +657,10 @@ class ReaderActivity : AppCompatActivity() {
      * 通过滑动条调整预览，确认后应用到阅读界面
      */
     private fun showFontSizeDialog() {
-        binding.textChapterTitle.visibility = View.VISIBLE
-        binding.textChapterTitle.text = getString(R.string.font_size) + ": ${currentFontSize.toInt()}sp"
+        showReaderStatus(getString(R.string.font_size) + ": ${currentFontSize.toInt()}sp")
+
+        // 取消时要把字号还原，避免“拖了滑块又关掉”也生效
+        val originalFontSize = currentFontSize
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_font_size, null)
         val seekBar = dialogView.findViewById<SeekBar>(R.id.seekbar_font_size)
@@ -622,6 +675,7 @@ class ReaderActivity : AppCompatActivity() {
                 val size = 12f + progress
                 currentFontSize = size
                 textPreview.textSize = size
+                showReaderStatus(getString(R.string.font_size) + ": ${size.toInt()}sp")
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -632,13 +686,32 @@ class ReaderActivity : AppCompatActivity() {
             .setTitle(R.string.font_size)
             .setView(dialogView)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                applyFontSize()
-                binding.textChapterTitle.visibility = View.GONE
+                // 字号变了必须重新分页：原先只 applyFontSize() 放大字号，
+                // 而分页结果是按旧字号切好的，结果文字被撑破页面 / 溢出屏幕
+                repaginateWithCurrentFont()
+                restoreChapterTitle()
             }
             .setOnCancelListener {
-                binding.textChapterTitle.visibility = View.GONE
+                currentFontSize = originalFontSize
+                restoreChapterTitle()
             }
             .show()
+    }
+
+    /**
+     * 用当前字号重新分页，并尽量停留在同一页。
+     */
+    private fun repaginateWithCurrentFont() {
+        if (!::viewModel.isInitialized) return
+        val content = viewModel.chapterContent.value ?: return
+        val anchorPage = currentPageIndex
+        paginateAndDisplay(content)
+        if (pages.size > 1 && anchorPage > 0) {
+            val target = anchorPage.coerceAtMost(pages.size - 1)
+            binding.viewpagerReader.setCurrentItem(target, false)
+            currentPageIndex = target
+            updateReaderFooter()
+        }
     }
 
     /**
@@ -646,6 +719,34 @@ class ReaderActivity : AppCompatActivity() {
      */
     private fun dpToPx(dp: Float): Int {
         return (dp * resources.displayMetrics.density + 0.5f).toInt()
+    }
+
+    /**
+     * sp 转 px。
+     *
+     * 字号设置里用的是 sp，原先错误地用 dpToPx 换算，忽略了系统字体缩放；
+     * 而页面 TextView 又把 px 除以 density 反算成“sp”，实际字号被缩小了约 1/2.75，
+     * 表现为“调了字号正文几乎没变化、整体偏小”。
+     */
+    /**
+     * 正文排版：每段首行缩进两个全角空格，段间留一个空行。
+     * 站点返回的正文一般是一行一段，这里做统一美化。
+     */
+    private fun formatParagraphs(raw: String): String {
+        if (raw.isBlank()) return raw
+        return raw.split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n\n") { "\u3000\u3000$it" }
+    }
+
+    private fun spToPx(sp: Float): Int {
+        return (sp * resources.displayMetrics.scaledDensity + 0.5f).toInt()
+    }
+
+    /** px 转 sp，供 TextView.textSize 使用 */
+    private fun pxToSp(px: Int): Float {
+        return px / resources.displayMetrics.scaledDensity
     }
 
     override fun onBackPressed() {
@@ -673,14 +774,20 @@ class ReaderActivity : AppCompatActivity() {
      */
     inner class ReaderPagerAdapter(
         private val pageList: List<String>,
-        private val chapterTitle: String,
+        private var chapterTitle: String,
         private val onPageCreated: (TextView) -> Unit
     ) : RecyclerView.Adapter<ReaderPagerAdapter.PageViewHolder>() {
 
         private var textColor = resources.getColor(R.color.reader_text, theme)
         private var bgColor = resources.getColor(R.color.reader_bg, theme)
-        private var textSizePx = dpToPx(18f)
-        private val titleSizeSp = 14f
+        private var textSizePx = spToPx(18f)
+        private val titleSizeSp = 13f
+
+        /** 章节名变化时只刷新标题，不用重建整个分页 */
+        fun updateChapterTitle(title: String) {
+            chapterTitle = title
+            notifyDataSetChanged()
+        }
 
         /**
          * 更新文字和背景颜色，通知刷新
@@ -718,10 +825,12 @@ class ReaderActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
-                setPadding(dpToPx(20f), dpToPx(12f), dpToPx(20f), dpToPx(4f))
+                // 章节标题：上方留白更大，与正文拉开层次
+                setPadding(dpToPx(24f), dpToPx(22f), dpToPx(24f), dpToPx(14f))
                 textSize = titleSizeSp
                 setTextColor(textColor)
-                typeface = Typeface.DEFAULT_BOLD
+                setLineSpacing(dpToPx(4f).toFloat(), 1f)
+                typeface = Typeface.SERIF
                 visibility = View.GONE
             }
             container.addView(titleView)
@@ -732,11 +841,12 @@ class ReaderActivity : AppCompatActivity() {
                     0,
                     1f
                 )
-                setPadding(dpToPx(20f), 0, dpToPx(20f), dpToPx(8f))
+                // 正文左右留白加大，阅读时视线更集中
+                setPadding(dpToPx(24f), 0, dpToPx(24f), dpToPx(20f))
                 setTextColor(textColor)
                 setBackgroundColor(bgColor)
-                textSize = textSizePx.toFloat() / resources.displayMetrics.density
-                setLineSpacing(dpToPx(1.8f * currentFontSize - currentFontSize).toFloat(), 1f)
+                textSize = pxToSp(textSizePx)
+                setLineSpacing(spToPx(currentFontSize) * (lineSpacing - 1f), 1f)
                 typeface = Typeface.SERIF
                 gravity = Gravity.TOP or Gravity.START
                 onPageCreated(this)
@@ -765,8 +875,8 @@ class ReaderActivity : AppCompatActivity() {
                 text = pageList[position]
                 setTextColor(textColor)
                 setBackgroundColor(bgColor)
-                textSize = textSizePx.toFloat() / resources.displayMetrics.density
-                setLineSpacing(dpToPx(1.8f * currentFontSize - currentFontSize).toFloat(), 1f)
+                textSize = pxToSp(textSizePx)
+                setLineSpacing(spToPx(currentFontSize) * (lineSpacing - 1f), 1f)
                 typeface = Typeface.SERIF
             }
 
@@ -790,33 +900,39 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     /**
-     * ViewPager2 深度页面切换动效
-     * 实现卡片翻页时的缩放和透明度渐变效果
+     * 覆盖式翻页动效（主流阅读器的滑动翻页）。
+     *
+     * 原来的 DepthPageTransformer 会把页面缩放成「卡片堆叠」，
+     * 阅读时字忽大忽小，观感很怪。这里改成整页水平位移，
+     * 当前页在上、下一页从右侧覆盖进来，配合一条细阴影分隔。
      */
     private class DepthPageTransformer : ViewPager2.PageTransformer {
         override fun transformPage(page: View, position: Float) {
-            val pageWidth = page.width
+            val width = page.width.toFloat()
             when {
-                position < -1 -> {
+                position < -1f -> {
                     page.alpha = 0f
-                }
-                position <= 0 -> {
-                    page.alpha = 1f
                     page.translationX = 0f
+                }
+                position <= 0f -> {
+                    // 当前页：保持不动，随手势轻微左移形成视差
+                    page.alpha = 1f
+                    page.translationX = -width * position * 0.3f
                     page.translationZ = 0f
                     page.scaleX = 1f
                     page.scaleY = 1f
                 }
-                position <= 1 -> {
-                    page.alpha = 1 - position
-                    page.translationX = pageWidth * -position
-                    page.translationZ = -1f
-                    val scaleFactor = 0.85f + (1 - position) * 0.15f
-                    page.scaleX = scaleFactor
-                    page.scaleY = scaleFactor
+                position <= 1f -> {
+                    // 下一页：从右侧平移覆盖，不缩放、不变暗
+                    page.alpha = 1f
+                    page.translationX = width * (1f - position)
+                    page.translationZ = 1f
+                    page.scaleX = 1f
+                    page.scaleY = 1f
                 }
                 else -> {
                     page.alpha = 0f
+                    page.translationX = 0f
                 }
             }
         }

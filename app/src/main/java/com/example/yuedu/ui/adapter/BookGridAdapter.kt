@@ -17,6 +17,8 @@ class BookGridAdapter(
     private var books = listOf<Book>()
 
     fun submitList(list: List<Book>) {
+        // 内容完全相同就不用刷新，避免每次观察者回调都整表重绘（图片闪烁）
+        if (books == list) return
         books = list
         notifyDataSetChanged()
     }
@@ -41,6 +43,15 @@ class BookGridAdapter(
         fun bind(book: Book) {
             binding.textTitle.text = book.title
             binding.textAuthor.text = book.author
+            // 没有封面时必须先把上一张图清掉，否则 RecyclerView 复用 ViewHolder 时
+            // 会继续显示别的书的封面（表现为“书名和封面不匹配”）
+            if (book.coverUrl.isBlank()) {
+                binding.imgCover.setImageDrawable(null)
+                binding.imgCover.setBackgroundResource(R.drawable.book_placeholder)
+                binding.root.setOnClickListener { onItemClick(book) }
+                return
+            }
+            binding.imgCover.setBackgroundResource(0)
             binding.imgCover.load(book.coverUrl) {
                 crossfade(true)
                 placeholder(R.drawable.book_placeholder)

@@ -6,12 +6,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import coil.ImageLoader
+import coil.imageLoader
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.example.yuedu.YueduApplication
 import com.example.yuedu.data.model.Book
 import com.example.yuedu.data.network.HtmlParser
 import com.example.yuedu.data.repository.BookRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
@@ -30,6 +38,9 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
 
     private val _isSearching = MutableLiveData(false)
     val isSearching: LiveData<Boolean> = _isSearching
+
+    /** 正在进行的搜索任务，用于防抖与竞态取消 */
+    private var searchJob: Job? = null
 
     init {
         loadPopularBooks()
@@ -80,8 +91,11 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
     }
 
     private fun preCacheCovers(books: List<Book>) {
+        // 必须复用 Application 配置的 ImageLoader 单例。
+        // 原来每调用一次就 new ImageLoader(context)：新建一套内存缓存、磁盘缓存和线程池，
+        // 预热结果列表页根本用不到（列表用的是 Application 那个），白白下载一遍。
         val context = YueduApplication.instance
-        val imageLoader = ImageLoader(context)
+        val imageLoader = context.imageLoader
         for (book in books) {
             if (book.coverUrl.isNotBlank()) {
                 try {
@@ -97,20 +111,36 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
         }
     }
 
+    /**
+     * 给缺封面的书补详情页封面。
+     *
+     * 原来是串行逐本请求详情页，20 本书每本 1~2 秒就要半分钟，
+     * 还和首屏渲染抢带宽。现在限并发 4，且整块挪到列表渲染之后再跑。
+     */
     private fun fetchMissingCovers(books: List<Book>) {
         viewModelScope.launch {
             val booksWithoutCover = books.filter { it.coverUrl.isBlank() }
             if (booksWithoutCover.isEmpty()) return@launch
-            val updatedBooks = booksWithoutCover.mapNotNull { book ->
-                try {
-                    val detail = repository.getBookDetail(book.url)
-                    if (detail.coverUrl.isNotBlank()) {
-                        book.copy(coverUrl = detail.coverUrl)
-                    } else null
-                } catch (_: Exception) {
-                    null
+            val updatedBooks = booksWithoutCover
+                .chunked(4)
+                .flatMap { chunk ->
+                    coroutineScope {
+                        chunk.map { book ->
+                            async {
+                                try {
+                                    val detail = repository.getBookDetail(book.url)
+                                    if (detail.coverUrl.isNotBlank()) {
+                                        book.copy(coverUrl = detail.coverUrl)
+                                    } else null
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
+                        }.awaitAll().filterNotNull()
+                    }
                 }
-            }
             if (updatedBooks.isNotEmpty()) {
                 repository.cachePopularBooks(updatedBooks)
                 preCacheCovers(updatedBooks)
@@ -126,21 +156,29 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
     fun search(keyword: String) {
         if (keyword.isBlank()) return
 
-        viewModelScope.launch {
+        // 取消上一次搜索：逐字搜索时多个请求并发返回，旧关键词的结果可能后到并覆盖新结果
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _isLoading.value = true
             _error.value = ""
             _isSearching.value = true
             try {
+                // 输入框每变一次就发请求太频繁，做 300ms 防抖
+                delay(300)
                 val result = repository.searchBooks(keyword)
                 _searchResults.value = result.books
                 _books.value = emptyList()
                 if (result.books.isEmpty()) {
                     _error.value = "未找到相关小说"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = "搜索失败：${e.message}"
             } finally {
-                _isLoading.value = false
+                if (isActive) {
+                    _isLoading.value = false
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.example.yuedu.data.repository
 
+import com.example.yuedu.data.YueduPrefs
 import com.example.yuedu.data.db.AppDatabase
 import com.example.yuedu.data.model.Book
 import com.example.yuedu.data.model.Chapter
@@ -19,6 +20,20 @@ import kotlinx.coroutines.flow.Flow
  * - 书籍搜索
  */
 class BookRepository(private val database: AppDatabase) {
+
+    companion object {
+        /** 目录缓存有效期：12 小时内打开同一本书直接用本地目录，不再联网重抓 */
+        private const val CHAPTER_LIST_FRESH_MS = 12 * 60 * 60 * 1000L
+
+        /**
+         * 目录解析规则版本。
+         *
+         * 之前版本曾把别的书的章节混进目录（index_N.html 返回的是其它书），
+         * 这些脏数据已经被写进本地库。升级版本号让旧缓存全部失效，
+         * 保证装上新版后一定用修正过的解析器重新抓一次。
+         */
+        private const val TOC_SCHEMA_VERSION = 2
+    }
 
     /** 书籍数据访问对象 */
     private val bookDao = database.bookDao()
@@ -94,31 +109,73 @@ class BookRepository(private val database: AppDatabase) {
     /**
      * 获取章节目录列表
      *
-     * 合并策略：优先从网络获取最新章节列表，同时保留本地缓存中已有的章节正文内容，
-     * 避免已下载的章节内容因刷新目录而丢失。
+     * 性能策略（这是"打开书加载太慢"的主要修复点）：
+     * 1. 本地已有目录且不超过 [CHAPTER_LIST_FRESH_MS]（12 小时）时直接用缓存，
+     *    不再重新抓整本目录——原来每次打开阅读页都要串行翻完所有目录页；
+     * 2. 缓存过期才走网络，网络失败时仍回退到旧缓存，不至于断网就打不开；
+     * 3. 网络结果合并本地已下载的章节正文后落库。
      *
      * @param bookUrl 书籍详情页 URL
      * @return 合并后的章节列表
      */
     suspend fun getChapterList(bookUrl: String): List<Chapter> {
         val cached = chapterDao.getChaptersByBookUrlSync(bookUrl)
-        val networkChapters = HtmlParser.getChapterList(bookUrl)
+        if (cached.isNotEmpty() && isChapterCacheFresh(cached)) {
+            return cached
+        }
+
+        val networkChapters = try {
+            HtmlParser.getChapterList(bookUrl)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // 网络失败：有旧缓存就用旧缓存，别让阅读页直接空白
+            return cached
+        }
         if (networkChapters.isNotEmpty()) {
-            val cachedMap = cached.associateBy { it.url }
-            val mergedChapters = networkChapters.map { network ->
-                cachedMap[network.url]?.let { cachedChapter ->
-                    network.copy(
-                        content = cachedChapter.content,
-                        id = cachedChapter.id
-                    )
-                } ?: network
-            }
+            // 必须先删后插：原来的顺序是把 old id 带进新实体再 delete+insert，
+            // 但 delete 之后这些 id 已失效，Room 会沿用旧主键 → 主键冲突/串行；
+            // 正确做法是删除旧数据、重新插入时一律使用自增 id，再回读一次真实 id。
             chapterDao.deleteChaptersByBookUrl(bookUrl)
+            val cachedContentByUrl = cached.associate { it.url to it.content }
+            val mergedChapters = networkChapters.map { network ->
+                network.copy(
+                    id = 0,
+                    content = cachedContentByUrl[network.url].orEmpty()
+                )
+            }
             chapterDao.insertChapters(mergedChapters)
-            return mergedChapters
+            markChapterListFetched(bookUrl)
+            // 回读，拿到数据库分配的自增 id，否则后续 updateChapter 会静默失败
+            return chapterDao.getChaptersByBookUrlSync(bookUrl)
         }
         return cached
     }
+
+    /**
+     * 目录缓存是否算“新”。
+     *
+     * 用章节里最后更新时间无法判断（实体没有该字段），这里以
+     * “缓存条目非空且书籍在书架/最近打开过”近似：直接比较时间戳不可行，
+     * 因此采用轻量方案——把上次抓取时间记在 SharedPreferences。
+     */
+    private fun isChapterCacheFresh(cached: List<Chapter>): Boolean {
+        if (cached.isEmpty()) return false
+        val bookUrl = cached.first().bookUrl
+        // 解析规则变了就让旧缓存失效
+        if (YueduPrefs.getInt(tocVersionKey(bookUrl), 0) != TOC_SCHEMA_VERSION) return false
+        val last = YueduPrefs.getLong(tocTimestampKey(bookUrl), 0L)
+        return System.currentTimeMillis() - last < CHAPTER_LIST_FRESH_MS
+    }
+
+    /** 记录目录抓取时间与解析规则版本 */
+    suspend fun markChapterListFetched(bookUrl: String) {
+        YueduPrefs.putLong(tocTimestampKey(bookUrl), System.currentTimeMillis())
+        YueduPrefs.putInt(tocVersionKey(bookUrl), TOC_SCHEMA_VERSION)
+    }
+
+    private fun tocTimestampKey(bookUrl: String): String = "toc_at_$bookUrl"
+    private fun tocVersionKey(bookUrl: String): String = "toc_ver_$bookUrl"
 
     /**
      * 获取章节列表的 Flow 流
@@ -136,7 +193,12 @@ class BookRepository(private val database: AppDatabase) {
      * 获取章节正文内容
      *
      * 优先使用缓存的有效内容，无效时从网络重新获取。
-     * 获取失败时返回包含章节 URL 的错误提示信息。
+     *
+     * 修复要点：
+     * 1. 失败时**不再把已有内容清成空串**——原来失败写回 ""，
+     *    下次进来又要重抓一遍，网络不好时就会一直转圈；
+     * 2. 失败时返回明确提示，而不是一个看起来像正文的“【章节URL】…”块；
+     * 3. 抓取成功立即落库，翻页回来不用再走网络。
      *
      * @param chapter 章节实体
      * @return 章节正文文本
@@ -145,31 +207,87 @@ class BookRepository(private val database: AppDatabase) {
         if (chapter.content.isNotEmpty() && !isInvalidCachedContent(chapter.content)) {
             return chapter.content
         }
-        val content = HtmlParser.getChapterContent(chapter.url)
-        if (content.isBlank() || isInvalidCachedContent(content)) {
-            val updatedChapter = chapter.copy(content = "")
-            chapterDao.updateChapter(updatedChapter)
-            return "【章节URL】\n${chapter.url}\n\n【正文】\n(内容获取失败，请稍后重试)"
+
+        val content = try {
+            HtmlParser.getChapterContent(chapter.url)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ""
         }
-        val updatedChapter = chapter.copy(content = content)
-        chapterDao.updateChapter(updatedChapter)
+
+        if (content.isBlank() || isInvalidCachedContent(content)) {
+            // 必须返回空串，绝不能返回「失败提示文案」：
+            // ViewModel 会把返回值当作正文缓存进内存/数据库，
+            // 之后每一章都命中这段缓存 → 看起来就是「翻章只在同一段文字里循环」。
+            // 提示文案由 UI 层根据空串自行显示，且不落缓存。
+            return ""
+        }
+
+        if (chapter.id != 0L) {
+            // 只更新已入库的章节行；id 为 0 时 update 不生效，交给 insert 路径处理
+            chapterDao.updateChapter(chapter.copy(content = content))
+        } else {
+            persistChapterContent(chapter, content)
+        }
         return content
     }
 
     /**
-     * 判断缓存的章节内容是否为无效数据
+     * 判断缓存的章节内容是否为无效数据（反爬页面）
      *
-     * 常见无效内容特征：包含 JavaScript 代码、jQuery 引用、
-     * CryptoJS 加密库等，这些通常是反爬虫页面而非正文。
+     * 原来的规则过于激进：正文里只要出现 “CryptoJS” 或 “hasOwnProperty”
+     * 就判定无效——技术流/程序员题材的小说里这些词很常见，
+     * 会命中后把正常正文清空，用户看到的就是“正文一直出不来”。
      *
-     * @param content 待检测的章节内容
-     * @return 是否为无效内容
+     * 现在只保留高置信度的特征：整段几乎都是 JS 代码、或者带明确的反爬域名标记。
      */
     private fun isInvalidCachedContent(content: String): Boolean {
-        if (content.length > 500 && content.contains("function(") && content.contains("var ")) return true
-        if (content.contains("jQuery") && content.contains("module.exports")) return true
-        if (content.contains("CryptoJS") || content.contains("hasOwnProperty")) return true
+        val text = content.trim()
+        if (text.isEmpty()) return true
+        // 纯代码页面：大量花括号/分号/函数声明，且几乎没有中文
+        val chineseCount = text.count { it.code in 0x4E00..0x9FFF }
+        val looksLikeCode = text.count { it == '{' || it == '}' || it == ';' } > text.length * 0.05
+        if (looksLikeCode && chineseCount < text.length * 0.2) return true
+        // 明确的反爬站点特征词
+        val blockedMarkers = listOf("bqgcp", "xcshu", "bishu8", "请开启JavaScript", "请启用JavaScript")
+        if (blockedMarkers.any { text.contains(it, ignoreCase = true) }) return true
+        // jQuery/加密库整段内联脚本（不是正文里提到这些词）
+        if (text.contains("jQuery.fn") || text.contains("CryptoJS.lib")) return true
         return false
+    }
+
+    /**
+     * 把章节正文写入本地数据库（离线下载用）。
+     *
+     * getChapterContent 内部虽然会 updateChapter，但那是基于从数据库读出来的实体；
+     * 如果这一章从未入库（例如刚抓完目录还没点进去过），update 不会生效，
+     * 所以这里显式 insert（REPLACE）一次，保证下载内容真的落盘。
+     *
+     * @param chapter 章节实体
+     * @param content 已获取到的正文
+     */
+    suspend fun persistChapterContent(chapter: Chapter, content: String) {
+        if (content.isBlank() || isInvalidCachedContent(content)) return
+        if (chapter.id == 0L) {
+            // 章节行还不存在，先确保书籍行存在（外键约束）
+            ensureBookExists(chapter.bookUrl)
+        }
+        chapterDao.insertChapter(chapter.copy(content = content))
+    }
+
+    /**
+     * 确保书籍记录存在于 books 表。
+     *
+     * chapters 表对 books.url 有外键约束，且书架页只展示 books 表里 isInBookshelf 的记录，
+     * 因此任何写章节 / 加书架的动作前都要先保证书籍行存在。
+     *
+     * @param bookUrl 书籍详情页 URL
+     */
+    suspend fun ensureBookExists(bookUrl: String) {
+        if (bookDao.getBookByUrl(bookUrl) != null) return
+        val detail = HtmlParser.getBookDetail(bookUrl)
+        bookDao.insertBook(detail)
     }
 
     /**

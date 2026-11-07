@@ -12,16 +12,23 @@
     <color name="orange_700">#E0552B</color>
     <color name="orange_300">#FF8C5A</color>
 
-    <color name="reader_bg">#F5E6CC</color>
-    <color name="reader_bg_night">#2B2B2B</color>
-    <color name="reader_text">#333333</color>
-    <color name="reader_text_night">#E8E8E8</color>
+    <!-- 阅读器：暖白纸张 + 墨色正文，降低长时间阅读的刺眼感 -->
+    <color name="reader_bg">#FAF8F3</color>
+    <color name="reader_bg_night">#1C1B1A</color>
+    <color name="reader_text">#2B2A28</color>
+    <color name="reader_text_night">#C9C5BE</color>
 
-    <color name="reader_top_bar_bg">#EDE0C8</color>
-    <color name="reader_bottom_bar_bg">#EDE0C8</color>
-    <color name="reader_bottom_bar_divider">#D5C8A8</color>
-    <color name="reader_top_bar_bg_night">#3A3A3A</color>
-    <color name="reader_bottom_bar_bg_night">#3A3A3A</color>
-    <color name="reader_bottom_bar_divider_night">#3A3A3A</color>
+    <!-- 顶/底栏用与正文一致的低色差纸色，去掉原来发黄的硬色块 -->
+    <color name="reader_top_bar_bg">#F3F0E9</color>
+    <color name="reader_bottom_bar_bg">#F3F0E9</color>
+    <color name="reader_bottom_bar_divider">#E5E0D6</color>
+    <color name="reader_top_bar_bg_night">#242320</color>
+    <color name="reader_bottom_bar_bg_night">#242320</color>
+    <color name="reader_bottom_bar_divider_night">#33312E</color>
+
+    <!-- 次要文字（页码/时间/电量） -->
+    <color name="reader_text_secondary">#8A857C</color>
+    <color name="reader_text_secondary_night">#7E7A73</color>
+
     <color name="badge_red">#FF4444</color>
 </resources>

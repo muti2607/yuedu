@@ -9,6 +9,7 @@ import coil.load
 import coil.request.CachePolicy
 import com.example.yuedu.R
 import com.example.yuedu.YueduApplication
+import com.example.yuedu.data.network.HtmlParser
 import com.example.yuedu.databinding.ActivityBookDetailBinding
 import com.example.yuedu.ui.adapter.ChapterAdapter
 import com.example.yuedu.ui.reader.ReaderActivity
@@ -78,15 +79,30 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun observeData() {
+        // 只注册一次观察者：同一个 LiveData 注册两次 observer 会让 UI 回调执行两遍，
+        // 阅读进度更新时容易重复触发
         viewModel.book.observe(this) { book ->
             book?.let {
                 binding.textTitle.text = it.title
                 binding.textAuthor.text = "作者：${it.author}"
                 binding.textDescription.text = it.description
-                binding.textCategory.text = it.category
+                // 分类 + 来源书源，直观看出这本书是从哪个站点抓的
+                val source = HtmlParser.siteNameOf(it.url)
+                binding.textCategory.text = if (it.category.isNotBlank()) {
+                    "${it.category} · " + getString(R.string.source_site, source)
+                } else {
+                    getString(R.string.source_site, source)
+                }
                 binding.textLastChapter.text = "最新章节：${it.lastChapterTitle}"
 
                 binding.toolbar.title = it.title
+
+                // 有阅读进度时按钮文案改成“继续阅读”
+                binding.btnRead.text = if (it.lastReadChapterIndex > 0) {
+                    getString(R.string.continue_reading)
+                } else {
+                    getString(R.string.start_reading)
+                }
 
                 if (it.coverUrl.isNotBlank()) {
                     binding.imgCover.load(it.coverUrl) {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 顶部工具栏：从纸色渐变到透明，避免硬色块割裂正文 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:startColor="@color/reader_top_bar_bg"
+        android:endColor="#00F3F0E9"
+        android:angle="270" />
+</shape>

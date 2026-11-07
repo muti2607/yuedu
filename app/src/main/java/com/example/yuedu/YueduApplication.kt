@@ -4,8 +4,10 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
+import coil.imageLoader
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
+import com.example.yuedu.data.YueduPrefs
 import com.example.yuedu.data.db.AppDatabase
 import com.example.yuedu.data.network.HtmlParser
 import com.example.yuedu.data.repository.BookRepository
@@ -47,6 +49,7 @@ class YueduApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        YueduPrefs.init(this)
         database = AppDatabase.getInstance(this)
         repository = BookRepository(database)
 
@@ -59,10 +62,12 @@ class YueduApplication : Application(), ImageLoaderFactory {
                 val books = HtmlParser.getPopularBooks()
                 if (books.isNotEmpty()) {
                     repository.cachePopularBooks(books)
+                    // ImageLoader 单例只取一次：原来在循环里每本书 new 一个，
+                    // 每次都新建线程池和缓存目录句柄，启动时明显卡顿
+                    val imageLoader = this@YueduApplication.imageLoader
                     for (book in books) {
                         if (book.coverUrl.isNotBlank()) {
                             try {
-                                val imageLoader = ImageLoader(this@YueduApplication)
                                 val request = coil.request.ImageRequest.Builder(this@YueduApplication)
                                     .data(book.coverUrl)
                                     .memoryCachePolicy(CachePolicy.ENABLED)

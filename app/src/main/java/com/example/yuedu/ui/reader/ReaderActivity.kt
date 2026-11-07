@@ -380,8 +380,12 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         viewModel.isLoading.observe(this) { loading ->
-            // 原来只处理 true 不处理 false，加载圈一旦出现就再也不消失
-            binding.progressLoading.visibility = if (loading) View.VISIBLE else View.GONE
+            // 正文已渲染时不再显示加载圈（否则重试期间会「本章暂无内容」+「加载中」同时出现）
+            if (loading && pages.isEmpty()) {
+                binding.progressLoading.visibility = View.VISIBLE
+            } else {
+                binding.progressLoading.visibility = View.GONE
+            }
         }
 
         viewModel.chapterIndex.observe(this) { index ->

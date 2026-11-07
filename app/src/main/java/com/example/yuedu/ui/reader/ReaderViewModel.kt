@@ -188,10 +188,16 @@ class ReaderViewModel(
         }
     }
 
-    /** 正文抓取失败时的自动重试次数 */
+    /** 正文抓取失败时的自动重试次数。
+     *
+     * 注意：每次重试都可能等满 CHAPTER_TIMEOUT_MS（20 秒），
+     * 所以总耗时 = 重试次数 × 超时 + 重试间隔。
+     * 原来 3 次 × 45 秒 = 最长 2.3 分钟，用户等得崩溃。
+     * 现在 2 次 × 20 秒 = 最长 40 秒，且首次正常响应只要 0.25 秒。
+     */
     private companion object {
-        const val CONTENT_FETCH_ATTEMPTS = 3
-        const val CONTENT_RETRY_DELAY_MS = 800L
+        const val CONTENT_FETCH_ATTEMPTS = 2
+        const val CONTENT_RETRY_DELAY_MS = 500L
         /** 翻章防抖：600ms 内的重复翻章请求直接忽略 */
         const val CHAPTER_NAV_DEBOUNCE_MS = 600L
     }

@@ -42,8 +42,13 @@ object SiteManager {
      */
     private const val CATALOG_PARALLELISM = 4
 
-    /** 单章正文的总时限，超时就返回提示而不是无限转圈 */
-    private const val CHAPTER_TIMEOUT_MS = 45_000L
+    /**
+     * 单章正文的总时限。
+     *
+     * 站点正文页正常响应 0.25 秒，20 秒已是 80 倍余量。
+     * 原来是 45 秒，配合 3 次重试 = 最长 2.3 分钟，用户等得崩溃。
+     */
+    private const val CHAPTER_TIMEOUT_MS = 20_000L
 
     /** 详情 */
     suspend fun getBookDetail(bookUrl: String): Book = withContext(Dispatchers.IO) {

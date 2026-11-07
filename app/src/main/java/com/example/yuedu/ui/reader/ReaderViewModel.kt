@@ -9,6 +9,7 @@ import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.data.repository.BookRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ReaderViewModel(
@@ -143,13 +144,36 @@ class ReaderViewModel(
                 _chapterContent.value = cached
                 _chapterTitle.value = chapter.title
             } else {
-                val content = repository.getChapterContent(chapter)
+                // 网络偶发抖动会导致单次抓取返回空串，直接把「获取失败」甩给用户
+                // 体验很差（实测复现：第一次进入偶尔空白）。这里自动重试，
+                // 间隔递增（0.8s / 1.6s），三次都失败才显示占位提示。
+                var content = ""
+                var lastError: Exception? = null
+                for (attempt in 1..CONTENT_FETCH_ATTEMPTS) {
+                    try {
+                        content = repository.getChapterContent(chapter)
+                        if (content.isNotBlank()) break
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        lastError = e
+                    }
+                    if (attempt < CONTENT_FETCH_ATTEMPTS) {
+                        delay(CONTENT_RETRY_DELAY_MS * attempt)
+                    }
+                }
                 // 空串 = 抓取失败。绝不能写进 currentChapters，
                 // 否则后面每一章都会命中这段「缓存」，表现为翻章永远停在同一段文字。
                 if (content.isNotBlank()) {
                     currentChapters[index] = chapter.copy(content = content)
+                    _chapterContent.value = content
+                } else {
+                    _chapterContent.value = buildString {
+                        append("本章内容暂时获取失败")
+                        lastError?.message?.takeIf { it.isNotBlank() }?.let { append("：$it") }
+                        append("\n\n点按屏幕中间呼出菜单，可重试或切换章节。")
+                    }
                 }
-                _chapterContent.value = content.ifBlank { "本章内容暂时获取失败，请稍后重试或切换章节" }
                 _chapterTitle.value = chapter.title
             }
             prefetchAdjacentChapters(index)
@@ -160,6 +184,12 @@ class ReaderViewModel(
         } finally {
             _isLoading.value = false
         }
+    }
+
+    /** 正文抓取失败时的自动重试次数 */
+    private companion object {
+        const val CONTENT_FETCH_ATTEMPTS = 3
+        const val CONTENT_RETRY_DELAY_MS = 800L
     }
 
     private fun prefetchAdjacentChapters(currentIndex: Int) {
@@ -212,8 +242,19 @@ class ReaderViewModel(
         }
     }
 
-    fun jumpToChapter(index: Int) {
+    /**
+     * 重试当前章节：清掉内存里的失败缓存后重新加载。
+     * 用于自动重试仍失败时，用户手动触发。
+     */
+    fun retryCurrentChapter() {
+        val index = _chapterIndex.value ?: return
+        if (index in currentChapters.indices) {
+            currentChapters[index] = currentChapters[index].copy(content = "")
+        }
         loadChapter(index)
+    }
+
+    fun jumpToChapter(index: Int) {        loadChapter(index)
     }
 
     /**

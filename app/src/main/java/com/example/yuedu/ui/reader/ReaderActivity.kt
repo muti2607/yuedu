@@ -292,13 +292,14 @@ class ReaderActivity : AppCompatActivity() {
 
     /** 「更多」菜单：只放真正能用的功能 */
     private fun showMoreMenu() {
-        val items = arrayOf("字体大小", "跳转到指定章节", "书源信息")
+        val items = arrayOf("重试本章", "字体大小", "跳转到指定章节", "书源信息")
         AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> showFontSizeDialog()
-                    1 -> showJumpToChapterDialog()
-                    2 -> showSourceInfo()
+                    0 -> viewModel.retryCurrentChapter()
+                    1 -> showFontSizeDialog()
+                    2 -> showJumpToChapterDialog()
+                    3 -> showSourceInfo()
                 }
             }
             .show()

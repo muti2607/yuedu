@@ -187,10 +187,27 @@ object SiteManager {
         result ?: "本章加载超时，请检查网络后重试"
     }
 
-    /** 普通站点的正文分页拼接 */
+    /**
+     * 普通站点的正文分页拼接。
+     *
+     * 关键修复（章节内容重复的真正原因）：
+     * biquga 并不存在 `xxx_2.html`，但它**不返回 404**，而是把第 1 页内容
+     * 原样再返回一遍。原来的循环只要 contentPageUrl() 不为 null 就一直翻，
+     * 于是同一段正文被 append 了最多 MAX_CONTENT_PAGES(30) 次，
+     * 用户看到的就是「一章内容重复几十遍」。
+     *
+     * 现在两道保险：
+     *  1. 页码或标题没有前进（站点没换页）→ 立即停止
+     *  2. 本页正文与已收集内容重复 → 丢弃并停止
+     */
     private suspend fun fetchPagedContent(site: BookSite, chapterUrl: String): String {
         val builder = StringBuilder()
+        /** 已收集的每页正文，用于去重 */
+        val pages = mutableListOf<String>()
+        /** 已见过的 (页码, 标题)，用来判断站点是否真的换页了 */
+        val seenPageMarks = mutableSetOf<String>()
         var page = 1
+
         while (page <= MAX_CONTENT_PAGES) {
             val url = if (page == 1) chapterUrl else site.contentPageUrl(chapterUrl, page) ?: break
             val doc = try {
@@ -201,10 +218,29 @@ object SiteManager {
                 if (page == 1) throw e
                 break
             }
+
+            // 站点若不换页，<h3> 之类的标题会一模一样（形如「引子（第1页）」）。
+            // 拿它做「是否真的翻页了」的判据，比只看页码可靠。
+            val pageMark = buildString {
+                append(doc.selectFirst("h3")?.text()?.trim().orEmpty())
+                append('|')
+                append(doc.title())
+            }
+            val isRepeatedPage = !seenPageMarks.add(pageMark)
+
             val text = site.parseChapterContent(doc, url)
             if (text.isBlank()) break
+
+            // 与本页之前任一页内容相同 → 站点在重复返回同一页，直接结束
+            val duplicated = pages.any { it == text || (it.length > 200 && text.contains(it)) }
+            if (duplicated || isRepeatedPage) {
+                break
+            }
+
+            pages.add(text)
             if (builder.isNotEmpty()) builder.append("\n\n")
             builder.append(text)
+
             // 正文页本身不跨页（例如单页小说），直接结束
             if (site.contentPageUrl(chapterUrl, 2) == null) break
             page++

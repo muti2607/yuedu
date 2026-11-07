@@ -279,16 +279,31 @@ class BookRepository(private val database: AppDatabase) {
     private fun isInvalidCachedContent(content: String): Boolean {
         val text = content.trim()
         if (text.isEmpty()) return true
-        // 纯代码页面：大量花括号/分号/函数声明，且几乎没有中文
+        // 纯代码页面：大量花括号/分号，且几乎没有中文
         val chineseCount = text.count { it.code in 0x4E00..0x9FFF }
         val looksLikeCode = text.count { it == '{' || it == '}' || it == ';' } > text.length * 0.05
         if (looksLikeCode && chineseCount < text.length * 0.2) return true
-        // 明确的反爬站点特征词
         val blockedMarkers = listOf("bqgcp", "xcshu", "bishu8", "请开启JavaScript", "请启用JavaScript")
         if (blockedMarkers.any { text.contains(it, ignoreCase = true) }) return true
-        // jQuery/加密库整段内联脚本（不是正文里提到这些词）
         if (text.contains("jQuery.fn") || text.contains("CryptoJS.lib")) return true
+        // 旧版本分页循环留下的脏数据：同一段正文被重复拼接多次
+        if (isDuplicatedContent(text)) return true
         return false
+    }
+
+    /**
+     * 判断正文是否被重复拼接。
+     *
+     * 站点对不存在的 xxx_2.html 会原样返回第 1 页，老版本据此循环分页，
+     * 把同一段正文重复了最多 30 遍。正常章节里一整段文字不会出现两次以上。
+     */
+    private fun isDuplicatedContent(text: String): Boolean {
+        if (text.length < 600) return false
+        val sampleLen = (text.length / 3).coerceIn(200, 800)
+        val sample = text.substring(0, sampleLen).trim()
+        if (sample.length < 200) return false
+        val second = text.indexOf(sample, sampleLen)
+        return second >= 0
     }
 
     /**

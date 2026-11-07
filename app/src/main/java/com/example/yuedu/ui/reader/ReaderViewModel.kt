@@ -190,6 +190,8 @@ class ReaderViewModel(
     private companion object {
         const val CONTENT_FETCH_ATTEMPTS = 3
         const val CONTENT_RETRY_DELAY_MS = 800L
+        /** 翻章防抖：600ms 内的重复翻章请求直接忽略 */
+        const val CHAPTER_NAV_DEBOUNCE_MS = 600L
     }
 
     private fun prefetchAdjacentChapters(currentIndex: Int) {
@@ -222,7 +224,24 @@ class ReaderViewModel(
         }
     }
 
+    /** 上一章 / 下一章的防抖时间戳，避免连点导致加载被反复取消 */
+    private var lastChapterNavAt = 0L
+
+    /**
+     * 翻章防抖：上一次翻章还在加载时忽略新的翻章请求。
+     *
+     * 之前没有这个保护，连着点「下一章」会不断 cancel 上一次加载、
+     * 又开新的加载，表现就是「点了没反应」或者停在原章。
+     */
+    private fun canNavigateChapter(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastChapterNavAt < CHAPTER_NAV_DEBOUNCE_MS) return false
+        lastChapterNavAt = now
+        return true
+    }
+
     fun nextChapter() {
+        if (!canNavigateChapter()) return
         val current = _chapterIndex.value ?: 0
         if (current < currentChapters.size - 1) {
             loadChapter(current + 1)
@@ -234,6 +253,7 @@ class ReaderViewModel(
     }
 
     fun prevChapter() {
+        if (!canNavigateChapter()) return
         val current = _chapterIndex.value ?: 0
         if (current > 0) {
             loadChapter(current - 1)

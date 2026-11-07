@@ -204,14 +204,16 @@ class BiqugaSite : BookSite() {
     /**
      * 正文分页：xxx.html 的第二页是 xxx_2.html
      */
-    override fun contentPageUrl(chapterUrl: String, page: Int): String? {
-        if (page <= 1) return null
-        return if (chapterUrl.endsWith(".html")) {
-            chapterUrl.dropLast(".html".length) + "_$page.html"
-        } else {
-            "$chapterUrl" + "_$page.html"
-        }
-    }
+    /**
+     * biquga 的正文是**单页**的，不做站内分页。
+     *
+     * 实测：请求 `13982253_2.html` 站点并不返回 404，
+     * 而是把第 1 页正文原样再返回一遍（标题仍是「引子（第1页）」）。
+     * 之前的实现据此以为还有下一页，循环拼接到上限 30 页，
+     * 导致同一段正文被重复几十遍——这正是用户反馈的「章节内容重复」。
+     * 返回 null 表示不跨页，从源头避免进入分页循环。
+     */
+    override fun contentPageUrl(chapterUrl: String, page: Int): String? = null
 
     override fun parseChapterContent(doc: Document, chapterUrl: String): String {
         val reader = doc.selectFirst(".word_read") ?: doc.body() ?: return ""

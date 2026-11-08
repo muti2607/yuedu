@@ -50,6 +50,7 @@ class YueduApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         instance = this
         YueduPrefs.init(this)
+        com.example.yuedu.data.network.site.SiteSettings.ensureInitialized()
         database = AppDatabase.getInstance(this)
         repository = BookRepository(database)
 

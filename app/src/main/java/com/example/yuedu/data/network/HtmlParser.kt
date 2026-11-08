@@ -5,6 +5,7 @@ import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.data.network.site.BookSites
 import com.example.yuedu.data.network.site.LocalBookIndex
 import com.example.yuedu.data.network.site.TiandiSite
+import com.example.yuedu.data.network.site.SiteSettings
 import com.example.yuedu.data.network.site.Xiang5Site
 import com.example.yuedu.data.network.site.BiqugeMomSite
 import com.example.yuedu.data.network.site.BiqugaSite
@@ -70,6 +71,7 @@ object HtmlParser {
         if (keyword.isBlank()) return@withContext SearchResult(emptyList())
         val kw = keyword.trim()
 
+
         // 主源：内置索引（0 网络）
         val local = try {
             LocalBookIndex.search(com.example.yuedu.YueduApplication.instance, kw)
@@ -80,49 +82,88 @@ object HtmlParser {
         }
 
 
-        // 结果够了直接返回，连网络都不发
-        if (local.size >= 8) {
+        // 用户停用了全部网络源时，只返回本地索引结果
+        val networkSites = SiteSettings.availableForSearch()
+        if (local.size >= 8 || networkSites.isEmpty()) {
             return@withContext SearchResult(local)
         }
 
-        // 补充源：并发查 biquga / 香网 / 天地中文，全部 6 秒超时，
-        // 任一失败都不影响主源结果。三家都是服务端真搜索。
-        // 补充源分两类：
-        //  - biquga：失败时会返回「请输入搜索词」+ 热门推荐，必须按关键词硬过滤
-        //  - 香网 / 天地中文：返回的是站点自己的搜索结果（按标签/语义匹配，
-        //    书名未必含关键词），直接采用不过滤，否则会把有效结果全滤掉
-        val biquga = coroutineScope {
-            async {
-                try {
-                    kotlinx.coroutines.withTimeoutOrNull(6_000L) { searchBiquga(kw) }.orEmpty()
-                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (_: Exception) { emptyList() }
-            }.await()
-        }.filter {
-            it.title.contains(kw, ignoreCase = true) || it.author.contains(kw, ignoreCase = true)
-        }
+        // 首选源只作为「优先展示」，但**不能串行阻塞**：
+        // 之前先等首选源再走自动搜索，源卡住时用户要等 12 秒。
+        // 现在首选源与其它源全部并发发出，首选源的结果排在最前面。
+        val primaryId = SiteSettings.primaryId()
 
-        val others = coroutineScope {
-            listOf<suspend () -> List<Book>>(
-                { searchXiang5(kw) },
-                { searchTiandi(kw) }
-            ).map { fn ->
+        // 只把「测速没超时」的源纳入搜索。
+        // 实测 bqgnovels / 22biqu / biquge.mom 在多数网络下直接超时，
+        // 让它们参与只会让 awaitAll 白等 2~4 秒——用户感知就是「搜索巨慢」。
+        // 测速超时的源先跳过；用户可在书源管理页重新测速后自动恢复。
+        val allSites = networkSites.filter { site ->
+            if (site.id == primaryId) return@filter true // 用户手动指定的源总是要试
+            // biquge.mom 实测 20 秒+、搜索基本拿不到结果，默认不参与搜索，
+            // 否则每次搜索都要白等它 2 秒（用户手动选为首选时仍会尝试）
+            if (site is BiqugeMomSite) return@filter false
+            !SiteSettings.isKnownDead(site.id) // 测速确认超时的源跳过
+        }.ifEmpty { networkSites } // 全被筛掉时兜底，避免搜不出东西
+
+        val extras = coroutineScope {
+            allSites.map { site ->
                 async {
                     try {
-                        kotlinx.coroutines.withTimeoutOrNull(6_000L) { fn() }.orEmpty()
-                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                    catch (_: Exception) { emptyList() }
+                        // 按实测速度给超时，避免慢源拖住整次搜索：
+                        //  biquge.mom 实测 20 秒+ → 2 秒（基本拿不到，别等）
+                        //  其余 → 4 秒（正常 300~1200ms，4 秒已很宽松）
+                        val budget = when {
+                            site is BiqugeMomSite -> 2_000L
+                            else -> 4_000L
+                        }
+                        kotlinx.coroutines.withTimeoutOrNull(budget) {
+                            searchOneSite(site.id, kw)
+                        }.orEmpty()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
                 }
-            }.awaitAll().flatten()
+            }.awaitAll()
         }
 
-        SearchResult((local + biquga + others).distinctBy { it.title + "|" + it.author })
+        // 按「首选源优先」重排：首选源的结果排前面，其余保持原顺序
+        val ordered = if (primaryId.isNotEmpty()) {
+            val idx = allSites.indexOfFirst { it.id == primaryId }
+            if (idx >= 0) listOf(extras[idx]) + extras.filterIndexed { i, _ -> i != idx } else extras
+        } else {
+            extras
+        }.flatten()
+
+        // biquga 失败时会返回「请输入搜索词」+ 热门推荐，必须按关键词硬过滤；
+        // 其余站点返回的是自己的真实搜索结果，不能过滤（书名未必含关键词）。
+        val filtered = ordered.filter { book ->
+            val site = BookSites.forUrl(book.url)
+            if (site is BiqugaSite) {
+                book.title.contains(kw, ignoreCase = true) || book.author.contains(kw, ignoreCase = true)
+            } else {
+                true
+            }
+        }
+        SearchResult((local + filtered).distinctBy { it.title + "|" + it.author })
     }
+    /** 按书源 id 分发到该源的搜索实现 */
+    private suspend fun searchOneSite(siteId: String, keyword: String): List<Book> {
+        val site = BookSites.all.firstOrNull { it.id == siteId } ?: return emptyList()
+        return when (site) {
+            is BiqugaSite -> searchBiquga(keyword)
+            is Xiang5Site -> searchXiang5(keyword)
+            is TiandiSite -> searchTiandi(keyword)
+            else -> emptyList()
+        }
+    }
+
 
     /** 香网搜索：结果里 a[href*=bookinfo] 即书籍 */
     private suspend fun searchXiang5(keyword: String): List<Book> {
         val site = BookSites.forUrl("http://www.xiang5.com/") as Xiang5Site
-        val doc = site.fetchDocument(site.searchUrl(keyword))
+        val doc = site.searchFetchDocument(site.searchUrl(keyword)) ?: return emptyList()
         return doc.select("a[href*=bookinfo]").mapNotNull { a ->
             val url = site.resolveUrl(a.attr("href"))
             val title = a.text().trim()
@@ -134,7 +175,7 @@ object HtmlParser {
     /** 天地中文搜索：结果里 a[href*=newbookinfo] 即书籍 */
     private suspend fun searchTiandi(keyword: String): List<Book> {
         val site = BookSites.forUrl("http://www.tiandizw.com/") as TiandiSite
-        val doc = site.fetchDocument(site.searchUrl(keyword))
+        val doc = site.searchFetchDocument(site.searchUrl(keyword)) ?: return emptyList()
         return doc.select("a[href*=newbookinfo]").mapNotNull { a ->
             val url = site.resolveUrl(a.attr("href"))
             val title = a.text().trim()
@@ -156,7 +197,7 @@ object HtmlParser {
             .header("Referer", "${site.baseUrl}/")
             .post(body)
             .build()
-        val doc = SharedHttp.execute(SharedHttp.client, request) { response, bytes ->
+        val doc = SharedHttp.execute(SharedHttp.searchClient, request) { response, bytes ->
             val charset = SharedHttp.detectCharset(response, bytes)
             Jsoup.parse(String(bytes, Charset.forName(charset)))
         }

@@ -27,6 +27,17 @@ abstract class BookSite {
     /** 站点根地址，例如 https://www.biquga.com */
     abstract val baseUrl: String
 
+    /**
+     * 站点稳定标识（用于偏好存储、测速缓存）。
+     * 默认取主机名，同一站点的不同协议/路径不会重复。
+     */
+    open val id: String
+        get() = try {
+            java.net.URI(baseUrl).host?.lowercase() ?: this::class.java.simpleName
+        } catch (_: Exception) {
+            this::class.java.simpleName
+        }
+
     /** 判断某个 URL 是否属于本站点 */
     fun matches(url: String): Boolean {
         val host = hostOf(url) ?: return false
@@ -88,6 +99,34 @@ abstract class BookSite {
      * 2. 瞬时故障快速重试——站点偶发 502/超时，退避 400ms 重试一次，
      *    大多数情况直接成功，避免把一次抖动放大成整页“加载失败”。
      */
+    /**
+     * 搜索用拉取：短超时、**不重试**。
+     *
+     * 搜索是用户等待的交互，宁可少一个源的结果，也不能让某个慢源
+     * 把整次搜索拖到十几秒。用 [SharedHttp.searchClient]（4 秒读超时），
+     * 失败立即返回 null 让调用方跳过该源。
+     */
+    suspend fun searchFetchDocument(url: String): Document? {
+        val target = normalize(url)
+        SharedHttp.cachedDocument(target)?.let { return it }
+        return try {
+            val builder = Request.Builder().url(target)
+            for ((k, v) in SharedHttp.htmlHeaders(referer = baseUrl + "/")) {
+                builder.header(k, v)
+            }
+            val doc = SharedHttp.execute(SharedHttp.searchClient, builder.build()) { response, body ->
+                val charset = SharedHttp.detectCharset(response, body)
+                Jsoup.parse(String(body, Charset.forName(charset)), url)
+            }
+            SharedHttp.putCachedDocument(target, doc)
+            doc
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun fetchDocument(url: String): Document {
         val target = normalize(url)
         SharedHttp.cachedDocument(target)?.let { return it }

@@ -279,6 +279,9 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
             } finally {
                 if (isActive) {
                     _isLoading.value = false
+                    // 必须同时清掉搜索态：之前只重置了 isLoading，
+                    // 「搜索小说…」的提示一直挂在界面上不消失。
+                    _isSearching.value = false
                 }
             }
         }

@@ -32,4 +32,16 @@ object YueduPrefs {
     fun putInt(key: String, value: Int) {
         sp?.edit()?.putInt(key, value)?.apply()
     }
+
+    fun getString(key: String, default: String): String = sp?.getString(key, default) ?: default
+
+    fun putString(key: String, value: String) {
+        sp?.edit()?.putString(key, value)?.apply()
+    }
+
+    fun getBoolean(key: String, default: Boolean): Boolean = sp?.getBoolean(key, default) ?: default
+
+    fun putBoolean(key: String, value: Boolean) {
+        sp?.edit()?.putBoolean(key, value)?.apply()
+    }
 }

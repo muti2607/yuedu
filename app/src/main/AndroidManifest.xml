@@ -30,6 +30,12 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
+            android:name=".ui.settings.SiteSettingsActivity"
+            android:exported="false"
+            android:label="书源管理"
+            android:parentActivityName=".MainActivity" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name">

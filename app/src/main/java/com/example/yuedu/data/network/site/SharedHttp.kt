@@ -48,6 +48,23 @@ object SharedHttp {
             store[url.host].orEmpty()
     }
 
+    /**
+     * 搜索专用 client：整体超时压到 4 秒。
+     *
+     * 关键：`withTimeoutOrNull` 只能取消协程，**取消不了 OkHttp 阻塞的 socket 读**。
+     * 之前默认 client 是 readTimeout 15s，于是搜索里即便写了 4 秒超时，
+     * 实际仍要等满 15 秒（实测 `search 'xingmen' took 15071ms`）。
+     * 搜索是用户能感知的操作，必须由 OkHttp 层面就限死。
+     */
+    val searchClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(4, TimeUnit.SECONDS)
+            .writeTimeout(4, TimeUnit.SECONDS)
+            .callTimeout(5, TimeUnit.SECONDS)
+            .build()
+    }
+
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             // 超时必须短：站点卡住时 15s 连接超时会让用户干等

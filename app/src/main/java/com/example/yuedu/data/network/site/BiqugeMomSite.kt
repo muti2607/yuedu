@@ -177,11 +177,79 @@ class BiqugeMomSite : BookSite() {
     }
 
     /**
+     * 直接调 apibi 的 book 接口拿书籍信息（书名/作者/章节数/状态）。
+     *
+     * 关键：apibi 的书号**就是站内 id**（实测 id=325 → 开天录、id=583 → 诡秘之主）。
+     * 因此内置索引命中后，无需访问 www.biquge.mom 的 HTML（该域在部分网络不可达），
+     * 全链路详情/目录/正文都可以走 apibi。
+     */
+    suspend fun fetchApiBook(bookId: Int): Book? = withContext(Dispatchers.IO) {
+        if (bookId <= 0) return@withContext null
+        val raw = try {
+            apiGet("book", """{"id":$bookId}""")
+        } catch (e: Exception) {
+            Log.w(TAG, "book 接口失败 id=$bookId", e)
+            return@withContext null
+        }
+        try {
+            val d = JSONObject(raw)
+            val title = d.optString("title")
+            if (title.isBlank()) return@withContext null
+            Book(
+                url = "${baseUrl.trimEnd('/')}/book/$bookId/",
+                title = title,
+                author = d.optString("author"),
+                status = if (d.optString("full") == "已经完本") "已完结" else "连载中",
+                lastChapterTitle = d.optString("lastchapter"),
+                lastUpdateTime = d.optString("lastupdate")
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 直接调 apibi 的 booklist 接口拿真实章节名列表。
+     * 返回 List<章节名>，无则 null。
+     */
+    suspend fun fetchApiChapterTitles(bookId: Int): List<String>? = withContext(Dispatchers.IO) {
+        if (bookId <= 0) return@withContext null
+        val raw = try {
+            apiGet("booklist", """{"id":$bookId}""")
+        } catch (e: Exception) {
+            Log.w(TAG, "booklist 接口失败 id=$bookId", e)
+            return@withContext null
+        }
+        try {
+            val arr = JSONObject(raw).optJSONArray("list") ?: return@withContext null
+            val out = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                out.add(arr.optString(i).trim())
+            }
+            out.filter { it.isNotEmpty() }.ifEmpty { null }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** apibi GET 带 token，返回原始文本 */
+    private fun apiGet(path: String, params: String): String {
+        val token = aesToken(params)
+        val request = Request.Builder()
+            .url("$apiBase/api/$path?token=" + java.net.URLEncoder.encode(token, "UTF-8"))
+            .header("User-Agent", SharedHttp.USER_AGENT)
+            .header("Referer", "$baseUrl/")
+            .build()
+        return SharedHttp.execute(SharedHttp.client, request) { _, bytes ->
+            String(bytes, Charsets.UTF_8)
+        }
+    }
+
+    /**
      * 生成接口 token：Base64(AES-128-CBC(明文, key, iv))
      * key = md5[16..32]，iv = md5[0..16]，md5 = md5("book@token.html")
      */
-    private fun aesToken(plain: String): String {
-        val digest = MessageDigest.getInstance("MD5")
+    private fun aesToken(plain: String): String {        val digest = MessageDigest.getInstance("MD5")
             .digest("book@token.html".toByteArray(Charsets.UTF_8))
         val hex = digest.joinToString("") { "%02x".format(it) }
         val iv = hex.substring(0, 16).toByteArray(Charsets.UTF_8)

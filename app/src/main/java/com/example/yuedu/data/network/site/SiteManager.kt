@@ -53,6 +53,17 @@ object SiteManager {
     /** 详情 */
     suspend fun getBookDetail(bookUrl: String): Book = withContext(Dispatchers.IO) {
         val site = BookSites.forUrl(bookUrl)
+
+        // biquge.mom：优先走 apibi 接口（www 域在部分网络不可达，
+        // 而 apibi.cc 可达且站内 id 直接就是接口书号）。失败再回退 HTML。
+        if (site is BiqugeMomSite) {
+            val id = site.bookId(bookUrl)
+            if (id != null) {
+                val apiBook = site.fetchApiBook(id)
+                if (apiBook != null && apiBook.title.isNotBlank()) return@withContext apiBook
+            }
+        }
+
         val doc = site.fetchDocument(bookUrl)
         val book = site.parseBookDetail(doc, bookUrl)
         // 部分站点的作者/书名只在列表页给出，详情页可能为空，这里兜底成 URL 的末段
@@ -72,6 +83,26 @@ object SiteManager {
      */
     suspend fun getChapterList(bookUrl: String): List<Chapter> = withContext(Dispatchers.IO) {
         val site = BookSites.forUrl(bookUrl)
+
+        // biquge.mom：优先走 apibi 的 booklist 接口拿真实章节名，
+        // 完全不依赖 www 域（在部分网络不可达），且一次请求拿到全部章节。
+        if (site is BiqugeMomSite) {
+            val id = site.bookId(bookUrl)
+            if (id != null) {
+                val titles = site.fetchApiChapterTitles(id)
+                if (!titles.isNullOrEmpty()) {
+                    return@withContext titles.mapIndexed { i, title ->
+                        Chapter(
+                            bookUrl = bookUrl,
+                            title = title,
+                            url = site.readerUrl(id, i + 1),
+                            index = i
+                        )
+                    }
+                }
+            }
+        }
+
         val firstDoc = site.fetchDocument(bookUrl)
         val firstPage = site.parseChapterList(firstDoc, bookUrl)
 
@@ -262,21 +293,11 @@ object SiteManager {
             ?.groupValues?.get(1)?.toIntOrNull()
             ?: return ""
 
-        // api 书号基本不变，同一本书只在第一次读时查一次详情页；
-        // 原来每章都重新拉详情页，等于每章多一次完整网络往返
-        val apiBookId = momApiIdCache.getOrPut(id) {
-            try {
-                val detail = site.fetchDocument("${site.baseUrl}/book/$id/")
-                site.apiBookId(detail, "${site.baseUrl}/book/$id/")
-            } catch (_: Exception) {
-                id
-            }
-        }
-        return site.fetchChapterText(apiBookId, chapterNo) ?: ""
+        // apibi 的书号就是站内 id（实测 id=325/583 均直接可用）。
+        // 不再请求 www.biquge.mom 的详情页去取 source_book_id —— 该域在部分网络
+        // 不可达，会白等 15 秒超时。直接用站内 id 调 apibi。
+        return site.fetchChapterText(id, chapterNo) ?: ""
     }
-
-    /** biquge.mom 站内 id → apibi 书号 的进程内缓存 */
-    private val momApiIdCache = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
     /**
      * 按章节序号补齐目录。

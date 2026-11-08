@@ -14,7 +14,9 @@ object BookSites {
         BiqugaSite(),
         BqgNovelsSite(),
         BiqugeMomSite(),
-        Biqu22Site()
+        Biqu22Site(),
+        Xiang5Site(),
+        TiandiSite()
     )
 
     /** 默认书源（热门书单/搜索优先走它） */

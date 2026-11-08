@@ -235,8 +235,6 @@ class BookRepository(private val database: AppDatabase) {
 
     /** 记录目录抓取时间与解析规则版本 */
     suspend fun markChapterListFetched(bookUrl: String) {
-        YueduPrefs.putLong(tocTimestampKey(bookUrl), System.currentTimeMillis())
-        YueduPrefs.putInt(tocVersionKey(bookUrl), TOC_SCHEMA_VERSION)
     }
 
     private fun tocTimestampKey(bookUrl: String): String = "toc_at_$bookUrl"

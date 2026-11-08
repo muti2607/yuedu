@@ -4,6 +4,8 @@ import com.example.yuedu.data.model.Book
 import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.data.network.site.BookSites
 import com.example.yuedu.data.network.site.LocalBookIndex
+import com.example.yuedu.data.network.site.TiandiSite
+import com.example.yuedu.data.network.site.Xiang5Site
 import com.example.yuedu.data.network.site.BiqugeMomSite
 import com.example.yuedu.data.network.site.BiqugaSite
 import com.example.yuedu.data.network.site.BqgNovelsSite
@@ -77,23 +79,68 @@ object HtmlParser {
             emptyList()
         }
 
+
+        // 结果够了直接返回，连网络都不发
         if (local.size >= 8) {
             return@withContext SearchResult(local)
         }
 
-        // 补充源：biquga，带超时，失败不影响主源结果
-        val raw = try {
-            kotlinx.coroutines.withTimeoutOrNull(10_000L) { searchBiquga(kw) } ?: emptyList()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            emptyList()
-        }
-
-        val filtered = raw.filter {
+        // 补充源：并发查 biquga / 香网 / 天地中文，全部 6 秒超时，
+        // 任一失败都不影响主源结果。三家都是服务端真搜索。
+        // 补充源分两类：
+        //  - biquga：失败时会返回「请输入搜索词」+ 热门推荐，必须按关键词硬过滤
+        //  - 香网 / 天地中文：返回的是站点自己的搜索结果（按标签/语义匹配，
+        //    书名未必含关键词），直接采用不过滤，否则会把有效结果全滤掉
+        val biquga = coroutineScope {
+            async {
+                try {
+                    kotlinx.coroutines.withTimeoutOrNull(6_000L) { searchBiquga(kw) }.orEmpty()
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (_: Exception) { emptyList() }
+            }.await()
+        }.filter {
             it.title.contains(kw, ignoreCase = true) || it.author.contains(kw, ignoreCase = true)
         }
-        SearchResult((local + filtered).distinctBy { it.title + "|" + it.author })
+
+        val others = coroutineScope {
+            listOf<suspend () -> List<Book>>(
+                { searchXiang5(kw) },
+                { searchTiandi(kw) }
+            ).map { fn ->
+                async {
+                    try {
+                        kotlinx.coroutines.withTimeoutOrNull(6_000L) { fn() }.orEmpty()
+                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (_: Exception) { emptyList() }
+                }
+            }.awaitAll().flatten()
+        }
+
+        SearchResult((local + biquga + others).distinctBy { it.title + "|" + it.author })
+    }
+
+    /** 香网搜索：结果里 a[href*=bookinfo] 即书籍 */
+    private suspend fun searchXiang5(keyword: String): List<Book> {
+        val site = BookSites.forUrl("http://www.xiang5.com/") as Xiang5Site
+        val doc = site.fetchDocument(site.searchUrl(keyword))
+        return doc.select("a[href*=bookinfo]").mapNotNull { a ->
+            val url = site.resolveUrl(a.attr("href"))
+            val title = a.text().trim()
+            if (url.isEmpty() || title.isEmpty() || title.length > 40) return@mapNotNull null
+            Book(url = url, title = title)
+        }.distinctBy { it.url }
+    }
+
+    /** 天地中文搜索：结果里 a[href*=newbookinfo] 即书籍 */
+    private suspend fun searchTiandi(keyword: String): List<Book> {
+        val site = BookSites.forUrl("http://www.tiandizw.com/") as TiandiSite
+        val doc = site.fetchDocument(site.searchUrl(keyword))
+        return doc.select("a[href*=newbookinfo]").mapNotNull { a ->
+            val url = site.resolveUrl(a.attr("href"))
+            val title = a.text().trim()
+            if (url.isEmpty() || title.isEmpty() || title.length > 40 || title == "书籍详情") return@mapNotNull null
+            Book(url = url, title = title)
+        }.distinctBy { it.url }
     }
 
     /**

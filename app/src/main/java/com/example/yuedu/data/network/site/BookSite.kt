@@ -142,6 +142,35 @@ abstract class BookSite {
         }
     }
 
+    /**
+     * 从整页里挑出「像正文」的段落。
+     *
+     * 有些站点（香网/天地中文）正文容器 class 在不同页面/重定向后不一致，
+     * 用固定选择器容易抓到导航菜单。这里改为按特征筛选：
+     *  - 段落够长（>25 字）
+     *  - 中文占比高
+     *  - 不含导航词/站点广告词
+     * 顺序取连续的长段落即可，天然跳过「作品/主页/目录」这类短菜单项。
+     */
+    protected fun extractParagraphs(doc: Document): String {
+        val noise = listOf(
+            "作品", "主页", "目录", "我要", "推荐", "评论", "专区", "返回",
+            "忘记密码", "登录", "注册", "书架", "上一章", "下一章", "加入书架",
+            "手机阅读", "最新网址", "提供", "无广告", "请收藏", "二维码"
+        )
+        val lines = doc.select("p").map { p ->
+            p.text().replace('\u00A0', ' ').trim()
+        }.filter { line ->
+            if (line.length <= 25) return@filter false
+            val chinese = line.count { it.code in 0x4E00..0x9FFF }
+            if (chinese < line.length * 0.5) return@filter false
+            // 导航项通常是短词组合，命中噪声词且很短就丢掉
+            if (line.length < 60 && noise.any { line == it || line.startsWith(it + " ") }) return@filter false
+            true
+        }
+        return lines.joinToString("\n")
+    }
+
     /** 清理正文：去标签、去广告、统一空行 */
     protected fun cleanContent(html: String): String {
         var text = html

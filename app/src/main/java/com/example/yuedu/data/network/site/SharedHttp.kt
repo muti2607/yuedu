@@ -32,6 +32,22 @@ object SharedHttp {
     class HttpException(val code: Int, url: String) :
         IllegalStateException("HTTP $code for $url")
 
+    /**
+     * 进程内 cookie 会话。
+     *
+     * 香网等站点靠 Set-Cookie + 302 做反爬：详情页种 cookie 后跳转，
+     * 后续请求不带这个 cookie 就会陷入无限重定向。OkHttp 默认不带 cookie，
+     * 这里挂一个内存 CookieJar 维持会话。
+     */
+    private val cookieJar = object : okhttp3.CookieJar {
+        private val store = java.util.concurrent.ConcurrentHashMap<String, List<okhttp3.Cookie>>()
+        override fun saveFromResponse(url: okhttp3.HttpUrl, cookies: List<okhttp3.Cookie>) {
+            store[url.host] = cookies
+        }
+        override fun loadForRequest(url: okhttp3.HttpUrl): List<okhttp3.Cookie> =
+            store[url.host].orEmpty()
+    }
+
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             // 超时必须短：站点卡住时 15s 连接超时会让用户干等
@@ -40,8 +56,17 @@ object SharedHttp {
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             .followSslRedirects(true)
-            // 显式给出 TLS 配置，避免部分服务端因默认套件差异直接断开
-            .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS))
+            .cookieJar(cookieJar)
+            // 显式给出连接配置：TLS + 明文。
+            // 部分书源（香网/天地中文）仍是 HTTP，若只配 TLS，OkHttp 会抛
+            // "CLEARTEXT communication not enabled for client" 直接失败。
+            .connectionSpecs(
+                listOf(
+                    ConnectionSpec.MODERN_TLS,
+                    ConnectionSpec.COMPATIBLE_TLS,
+                    ConnectionSpec.CLEARTEXT
+                )
+            )
             .build()
     }
 

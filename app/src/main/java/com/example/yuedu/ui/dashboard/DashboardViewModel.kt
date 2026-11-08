@@ -55,13 +55,15 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
     /** 书城列表的目录预热任务 */
     private var prefetchJob: Job? = null
 
-    /** 预热前几本书的目录（多了会抢占带宽并可能触发反爬） */
-    private companion object {
-        const val PREFETCH_BOOKS = 3
-    }
+    /** 本地书库索引预热任务（扩大搜索覆盖面） */
+    private var warmUpJob: Job? = null
 
     init {
         loadPopularBooks()
+        // 后台静默填充本地书库索引，让搜索能即时命中更多热门书
+        warmUpJob = viewModelScope.launch {
+            repository.warmUpLocalBookIndex()
+        }
     }
 
     /**
@@ -145,16 +147,6 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
         }
     }
 
-    /**
-     * 空闲时预热目录。
-     *
-     * biquga 的详情页本身极慢（实测单次 6~9 秒，页面仅 23KB，是站点侧建页慢），
-     * 而目录只存在于详情页里，用户点进详情必然要等这么久。
-     *
-     * 这里在书城列表加载完成后，立刻在后台顺序预热前几本书的详情+目录：
-     * 用户浏览列表的这段时间，目录已经落库，点进去就是秒开。
-     * 只预热少量（PREFETCH_BOOKS）避免抢占带宽和触发反爬。
-     */
     /**
      * 空闲时预热目录。
      *
@@ -263,11 +255,22 @@ class DashboardViewModel(private val repository: BookRepository) : ViewModel() {
             try {
                 // 输入框每变一次就发请求太频繁，做 300ms 防抖
                 delay(300)
-                val result = repository.searchBooks(keyword)
-                _searchResults.value = result.books
+
+                // 1) 先出本地缓存结果（0 网络，毫秒级），让用户立刻看到内容
+                val local = repository.searchLocalBooks(keyword)
+                if (local.isNotEmpty()) {
+                    _searchResults.value = local
+                    _books.value = emptyList()
+                    _isLoading.value = false
+                }
+
+                // 2) 再补网络结果，后到时合并去重；网络慢/失败也不影响已显示的本地结果
+                val remote = repository.searchBooks(keyword)
+                val merged = (local + remote.books).distinctBy { it.title + "|" + it.author }
+                _searchResults.value = merged
                 _books.value = emptyList()
-                if (result.books.isEmpty()) {
-                    _error.value = "未找到相关小说"
+                if (merged.isEmpty()) {
+                    _error.value = "未找到相关小说，换个关键词试试"
                 }
             } catch (e: CancellationException) {
                 throw e

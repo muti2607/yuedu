@@ -5,6 +5,9 @@ import com.example.yuedu.data.db.AppDatabase
 import com.example.yuedu.data.model.Book
 import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.data.network.HtmlParser
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -62,13 +65,66 @@ class BookRepository(private val database: AppDatabase) {
     }
 
     /**
+     * 后台把各分类的书籍缓存进本地库，扩大「本地即时搜索」的覆盖面。
+     *
+     * 搜索的即时结果来自 books 表的 LIKE 查询，但默认只有书城首页 6 本，
+     * 覆盖面太小。这里在书城空闲时静默拉取 7 个分类（每类约 20 本），
+     * 让本地索引达到上百本热门书；失败不影响任何现有功能。
+     */
+    suspend fun warmUpLocalBookIndex() {
+        // 限 3 并发拉取 7 个分类（串行要 40+ 秒，并发约 10 秒）。
+        // 类别页本身较慢，并发太多又会触发站点限流。
+        coroutineScope {
+            (1..7).chunked(3).forEach { batch ->
+                batch.map { id ->
+                    async {
+                        try {
+                            val books = HtmlParser.getBooksByCategory(id)
+                            if (books.isNotEmpty()) bookDao.insertBooks(books)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
+    }
+
+    /**
      * 搜索书籍
      *
      * @param keyword 搜索关键词
      * @return 搜索结果，包含书籍列表及分页信息
      */
+    /**
+     * 搜索：本地缓存即时兜底 + 网络结果补充。
+     *
+     * books 表里缓存了书城推荐、各分类、以及打开过的书籍详情，
+     * 用户搜的书很可能已经在里面。先做 0 网络的本地 LIKE 查询，
+     * 再叠加网络搜索结果，最后按书名|作者去重。
+     * 这样即使网络源超时，用户也能立刻看到本地已有的书，而不是干等 8 秒后「未找到」。
+     */
     suspend fun searchBooks(keyword: String): HtmlParser.SearchResult {
-        return HtmlParser.searchBooks(keyword)
+        val kw = keyword.trim()
+        if (kw.isEmpty()) return HtmlParser.SearchResult(emptyList())
+
+        val local = searchLocalBooks(kw)
+        val remote = HtmlParser.searchBooks(kw)
+        return HtmlParser.SearchResult(
+            (local + remote.books).distinctBy { it.title + "|" + it.author }
+        )
+    }
+
+    /** 仅查本地缓存的即时搜索（0 网络），用于搜索时先出结果、再补网络 */
+    suspend fun searchLocalBooks(keyword: String): List<Book> {
+        val kw = keyword.trim()
+        if (kw.isEmpty()) return emptyList()
+        return try {
+            bookDao.searchCachedBooks(kw)
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     // ========== 书籍详情 ==========

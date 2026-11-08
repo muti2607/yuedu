@@ -3,8 +3,8 @@ package com.example.yuedu.data.network
 import com.example.yuedu.data.model.Book
 import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.data.network.site.BookSites
-import com.example.yuedu.data.network.site.BiqugaSite
 import com.example.yuedu.data.network.site.BiqugeMomSite
+import com.example.yuedu.data.network.site.BiqugaSite
 import com.example.yuedu.data.network.site.BqgNovelsSite
 import com.example.yuedu.data.network.site.SharedHttp
 import com.example.yuedu.data.network.site.SiteManager
@@ -50,33 +50,36 @@ object HtmlParser {
     // ==================== 搜索 ====================
 
     /**
-     * 搜索：并发请求各书源，汇总结果。
+     * 搜索：以 biquga 的 POST 搜索为主源。
      *
-     * 原来逐个站点串行等待，一个站点卡 15 秒超时，整次搜索就要 45 秒起步；
-     * 现在并发发出，总耗时 ≈ 最慢的那个站点。
-     * 某个站点挂了不影响其它站点返回的内容；全部为空时返回空列表。
+     * 之前三个源并发 `awaitAll()`，被最慢的源拖到 20 秒以上，
+     * 且其中两个是假搜索：
+     *  - biquge.mom /search?q= 纯前端渲染，HTML 里没有结果（解析到的是页脚热门推荐）
+     *  - bqgnovels 无搜索页，之前是抓分类页本地过滤
+     *  - 试过改用 biquge.mom 的静态 JSON 索引，但该域对 App 直连响应 15s+ 超时，不可行
+     *
+     * 现在只保留 biquga 一个真搜索源，8 秒超时，失败即返回空（给出明确提示），
+     * 不再让任何一个慢源拖累整体。搜索结果按关键词本地过滤一遍，
+     * 避免站点返回「请输入搜索词」页里的推荐书混进结果。
      */
     suspend fun searchBooks(keyword: String): SearchResult = withContext(Dispatchers.IO) {
         if (keyword.isBlank()) return@withContext SearchResult(emptyList())
-        val searchers: List<suspend () -> List<Book>> = listOf(
-            { searchBiquga(keyword) },
-            { searchBiqugeMom(keyword) },
-            { searchBqgNovels(keyword) }
-        )
-        val results = coroutineScope {
-            searchers.map { searcher ->
-                async {
-                    try {
-                        searcher()
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        emptyList()
-                    }
-                }
-            }.awaitAll().flatten()
+        val kw = keyword.trim()
+
+        val raw = try {
+            kotlinx.coroutines.withTimeoutOrNull(10_000L) { searchBiquga(kw) } ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
         }
-        SearchResult(results.distinctBy { it.title + "|" + it.author })
+
+        // 站点搜索失败时会返回「请输入搜索词」+ 热门推荐，
+        // 这些书和关键词无关，必须过滤掉，否则就是「搜什么都是这几本」。
+        val filtered = raw.filter {
+            it.title.contains(kw, ignoreCase = true) || it.author.contains(kw, ignoreCase = true)
+        }
+        SearchResult(filtered.distinctBy { it.title + "|" + it.author })
     }
 
     /**

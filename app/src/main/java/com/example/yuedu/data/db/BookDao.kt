@@ -25,6 +25,10 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY addTime DESC")
     suspend fun getAllCachedBooksSync(): List<Book>
 
+    /** 本地缓存里按书名/作者模糊搜（0 网络，搜索的即时兜底） */
+    @Query("SELECT * FROM books WHERE title LIKE '%' || :kw || '%' OR author LIKE '%' || :kw || '%' ORDER BY addTime DESC LIMIT 40")
+    suspend fun searchCachedBooks(kw: String): List<Book>
+
     @Query("SELECT * FROM books WHERE url = :url")
     suspend fun getBookByUrl(url: String): Book?
 

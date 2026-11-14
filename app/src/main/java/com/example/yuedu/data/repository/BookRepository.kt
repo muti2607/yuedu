@@ -5,6 +5,7 @@ import com.example.yuedu.data.db.AppDatabase
 import com.example.yuedu.data.model.Book
 import com.example.yuedu.data.model.Chapter
 import com.example.yuedu.data.network.HtmlParser
+import com.example.yuedu.data.network.site.LocalBookIndex
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -120,11 +121,25 @@ class BookRepository(private val database: AppDatabase) {
     suspend fun searchLocalBooks(keyword: String): List<Book> {
         val kw = keyword.trim()
         if (kw.isEmpty()) return emptyList()
-        return try {
+
+        // 第一优先级：内置书库索引（19 万本，纯内存，毫秒级）
+        // 这是「输入即出结果」的关键——不依赖任何网络请求。
+        val indexed = try {
+            LocalBookIndex.search(com.example.yuedu.YueduApplication.instance, kw)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        // 再并入已缓存的书籍（用户看过的书可能不在索引里）
+        val cached = try {
             bookDao.searchCachedBooks(kw)
         } catch (_: Exception) {
             emptyList()
         }
+
+        return (cached + indexed).distinctBy { it.title + "|" + it.author }
     }
 
     // ========== 书籍详情 ==========

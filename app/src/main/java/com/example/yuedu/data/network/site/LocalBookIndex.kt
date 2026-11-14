@@ -24,7 +24,7 @@ import java.util.zip.GZIPInputStream
 object LocalBookIndex {
 
     private const val BASE = "https://www.biquge.mom"
-    private const val ASSET = "book_index.gz"
+    private const val ASSET = "book_index.dat"
     private const val MAX_RESULTS = 40
 
     /** 已解压的索引行：id \t 书名 \t 作者 */
@@ -50,15 +50,29 @@ object LocalBookIndex {
         val prefix = mutableListOf<Book>()
         val contains = mutableListOf<Book>()
 
+        // keyword 可能是中文，也可能是拼音（douluo / dldl）
+        val isAscii = kw.all { it.code < 128 }
+
         for (line in data) {
-            val parts = line.split('\t', limit = 3)
+            val parts = line.split('\t', limit = 5)
             if (parts.size < 2) continue
             val title = parts[1]
             val author = parts.getOrElse(2) { "" }
+            val initials = parts.getOrElse(3) { "" }   // 拼音首字母 dldl
+            val pinyin = parts.getOrElse(4) { "" }     // 全拼 douluodalu
+
             val tl = title.lowercase()
-            val matchedInTitle = tl.contains(kw)
-            val matchedInAuthor = author.lowercase().contains(kw)
-            if (!matchedInTitle && !matchedInAuthor) continue
+            val al = author.lowercase()
+
+            // 中文直接匹配书名/作者；英文（拼音）匹配预生成的拼音列
+            val matched = if (isAscii) {
+                initials.startsWith(kw) || pinyin.startsWith(kw) ||
+                    initials.contains(kw) || pinyin.contains(kw) ||
+                    tl.contains(kw) || al.contains(kw)
+            } else {
+                tl.contains(kw) || al.contains(kw)
+            }
+            if (!matched) continue
 
             val id = parts[0].toIntOrNull() ?: continue
             val book = Book(
@@ -67,8 +81,11 @@ object LocalBookIndex {
                 author = author
             )
             when {
-                tl == kw || author.lowercase() == kw -> exact.add(book)
+                tl == kw || al == kw -> exact.add(book)
+                // 拼音精确命中首字母（如 dldl = 斗罗大陆）也算高优先级
+                isAscii && (initials == kw || pinyin == kw) -> exact.add(book)
                 tl.startsWith(kw) -> prefix.add(book)
+                isAscii && (initials.startsWith(kw) || pinyin.startsWith(kw)) -> prefix.add(book)
                 else -> contains.add(book)
             }
             if (exact.size + prefix.size + contains.size >= MAX_RESULTS * 3) break
@@ -93,18 +110,31 @@ object LocalBookIndex {
             try {
                 val list = mutableListOf<String>()
                 context.assets.open(ASSET).use { raw ->
-                    GZIPInputStream(raw).use { gz ->
-                        BufferedReader(InputStreamReader(gz, Charsets.UTF_8)).use { reader ->
-                            while (true) {
-                                val line = reader.readLine() ?: break
-                                if (line.isNotEmpty()) list.add(line)
-                            }
+                    // 构建工具对 .gz 资源做过特殊处理（解压 + 去后缀），
+                    // 因此这里按魔数判断：gzip 就解压，否则当纯文本读。
+                    val head = java.io.BufferedInputStream(raw)
+                    head.mark(2)
+                    val b0 = head.read()
+                    val b1 = head.read()
+                    head.reset()
+                    val isGzip = b0 == 0x1f && b1 == 0x8b
+                    val stream = if (isGzip) GZIPInputStream(head) else head
+                    BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+                        while (true) {
+                            val line = reader.readLine() ?: break
+                            if (line.isNotEmpty()) list.add(line)
                         }
                     }
                 }
+                if (list.isEmpty()) {
+                    // 资源存在但读出来是空的，视为失败，避免反复读空文件
+                    loadError = true
+                    return emptyList()
+                }
                 lines = list
                 return list
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.w("LocalBookIndex", "加载内置索引失败: ${e.javaClass.simpleName} ${e.message}")
                 loadError = true
                 return emptyList()
             }

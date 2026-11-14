@@ -65,6 +65,29 @@ object SharedHttp {
             .build()
     }
 
+    /**
+     * apibi 专用 client：短超时。
+     *
+     * apibi.cc 偶发挂起，用共享 client 的 15 秒 readTimeout 会让详情页
+     * 干等 15 秒才显示「暂无章节」。接口正常 1~3 秒，6 秒已很宽松。
+     */
+    val apiClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS)
+            .callTimeout(8, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** booklist 响应较大（20KB+），在慢网络下需要更长的读超时 */
+    val apiLongClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(18, TimeUnit.SECONDS)
+            .build()
+    }
+
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             // 超时必须短：站点卡住时 15s 连接超时会让用户干等

@@ -11,7 +11,7 @@
     android:paddingEnd="5dp"
     android:paddingBottom="12dp">
 
-    <!-- 封面外框：圆角裁切 -->
+    <!-- 封面外框：圆角裁剪 -->
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -19,13 +19,31 @@
         app:cardCornerRadius="6dp"
         app:cardElevation="0dp">
 
-        <ImageView
-            android:id="@+id/img_cover"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="148dp"
-            android:background="@drawable/book_placeholder"
-            android:contentDescription="封面"
-            android:scaleType="centerCrop" />
+            android:layout_height="148dp">
+
+            <ImageView
+                android:id="@+id/img_cover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/book_placeholder"
+                android:contentDescription="封面"
+                android:scaleType="centerCrop" />
+
+            <!-- 无封面时的兜底：用书名首字生成，永远和书名一致，不会串图 -->
+            <TextView
+                android:id="@+id/text_cover_fallback"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:textColor="#FFFFFF"
+                android:textSize="34sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="斗"
+                tools:visibility="visible" />
+        </FrameLayout>
     </androidx.cardview.widget.CardView>
 
     <TextView

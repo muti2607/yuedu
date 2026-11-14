@@ -151,16 +151,23 @@ class BiqugeMomSite : BookSite() {
             .header("User-Agent", SharedHttp.USER_AGENT)
             .header("Referer", "$baseUrl/")
             .build()
-        try {
-            SharedHttp.execute(SharedHttp.client, request) { _, bytes ->
-                val json = JSONObject(String(bytes, Charsets.UTF_8))
-                val txt = json.optString("txt")
-                if (txt.length < 50) null else tidy(txt)
+        // 接口偶发抖动，重试一次（间隔 400ms），避免一次超时就让用户看到空白正文
+        repeat(2) { attempt ->
+            try {
+                val result = SharedHttp.execute(SharedHttp.apiLongClient, request) { _, bytes ->
+                    val json = JSONObject(String(bytes, Charsets.UTF_8))
+                    val txt = json.optString("txt")
+                    if (txt.length < 50) null else tidy(txt)
+                }
+                if (!result.isNullOrBlank()) return@withContext result
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "章节接口失败 id=$apiBookId no=$chapterNo attempt=$attempt", e)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "章节接口失败 id=$apiBookId no=$chapterNo", e)
-            null
+            if (attempt == 0) kotlinx.coroutines.delay(400L)
         }
+        null
     }
 
     /** 正文里用换行分段，少量 HTML 实体需要还原 */
@@ -202,7 +209,12 @@ class BiqugeMomSite : BookSite() {
                 status = if (d.optString("full") == "已经完本") "已完结" else "连载中",
                 lastChapterTitle = d.optString("lastchapter"),
                 lastUpdateTime = d.optString("lastupdate")
-            )
+            ).also { book ->
+                // 缓存章节数：booklist 接口经常 TLS 挂死，
+                // 拿到章节数就能按序号生成目录，正文走 chapter 接口按号取。
+                val count = d.optInt("lastchapterid", 0)
+                if (count in 1..5000) chapterCountCache[bookId] = count
+            }
         } catch (_: Exception) {
             null
         }
@@ -215,7 +227,7 @@ class BiqugeMomSite : BookSite() {
     suspend fun fetchApiChapterTitles(bookId: Int): List<String>? = withContext(Dispatchers.IO) {
         if (bookId <= 0) return@withContext null
         val raw = try {
-            apiGet("booklist", """{"id":$bookId}""")
+            apiGet("booklist", """{"id":$bookId}""", SharedHttp.apiLongClient)
         } catch (e: Exception) {
             Log.w(TAG, "booklist 接口失败 id=$bookId", e)
             return@withContext null
@@ -233,14 +245,14 @@ class BiqugeMomSite : BookSite() {
     }
 
     /** apibi GET 带 token，返回原始文本 */
-    private fun apiGet(path: String, params: String): String {
+    private fun apiGet(path: String, params: String, client: okhttp3.OkHttpClient = SharedHttp.apiClient): String {
         val token = aesToken(params)
         val request = Request.Builder()
             .url("$apiBase/api/$path?token=" + java.net.URLEncoder.encode(token, "UTF-8"))
             .header("User-Agent", SharedHttp.USER_AGENT)
             .header("Referer", "$baseUrl/")
             .build()
-        return SharedHttp.execute(SharedHttp.client, request) { _, bytes ->
+        return SharedHttp.execute(client, request) { _, bytes ->
             String(bytes, Charsets.UTF_8)
         }
     }
@@ -280,5 +292,10 @@ class BiqugeMomSite : BookSite() {
 
     companion object {
         private const val TAG = "BiqugeMomSite"
+
+        /** book 接口返回的章节总数，供 booklist 挂死时按序号生成目录 */
+        private val chapterCountCache = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+        fun cachedChapterCount(bookId: Int): Int = chapterCountCache[bookId] ?: 0
     }
 }

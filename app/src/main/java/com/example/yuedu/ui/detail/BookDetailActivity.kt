@@ -36,6 +36,16 @@ class BookDetailActivity : AppCompatActivity() {
         val repository = (application as YueduApplication).repository
         val bookUrl = intent.getStringExtra("book_url") ?: return
 
+        // 先用列表页传来的已知信息立刻把详情页填上，避免等网络时一片空白。
+        // 网络详情回来后 viewModel.book 观察者会覆盖成更完整的数据。
+        val knownTitle = intent.getStringExtra("book_title").orEmpty()
+        if (knownTitle.isNotBlank()) {
+            binding.textTitle.text = knownTitle
+            binding.toolbar.title = knownTitle
+            binding.textAuthor.text = "作者：" + intent.getStringExtra("book_author").orEmpty()
+            binding.btnRead.text = getString(R.string.start_reading)
+        }
+
         viewModel = BookDetailViewModel(repository, bookUrl)
 
         setupToolbar()
@@ -101,6 +111,9 @@ class BookDetailActivity : AppCompatActivity() {
         // 阅读进度更新时容易重复触发
         viewModel.book.observe(this) { book ->
             book?.let {
+                // 网络详情失败时会回一个空壳对象，别把列表页已经显示好的
+                // 书名/作者覆盖成空白。
+                if (it.title.isBlank()) return@let
                 binding.textTitle.text = it.title
                 binding.textAuthor.text = "作者：${it.author}"
                 binding.textDescription.text = it.description
@@ -148,7 +161,9 @@ class BookDetailActivity : AppCompatActivity() {
             renderChapterPreview()
 
             binding.textChapterCount.text = if (chapters.isEmpty()) {
-                getString(R.string.no_chapters)
+                // 目录还在加载/接口临时失败时说清楚，不要直接写「暂无章节」
+                // 让用户误以为这本书没有内容。
+                "目录加载中或暂不可用"
             } else if (chapters.size > PREVIEW_COUNT) {
                 // 明确告知只展示了一部分，完整目录在阅读页里
                 "共 ${chapters.size} 章 · 完整目录请进入阅读"

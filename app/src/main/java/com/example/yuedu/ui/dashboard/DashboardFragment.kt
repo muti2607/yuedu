@@ -45,6 +45,11 @@ class DashboardFragment : Fragment() {
         adapter = BookGridAdapter { book ->
             val intent = Intent(requireContext(), BookDetailActivity::class.java)
             intent.putExtra("book_url", book.url)
+            // 把列表里已知的信息一并传过去，详情页可以零延迟先渲染出来，
+            // 不必等网络详情接口返回（apibi 慢时用户会盯着空白页等十几秒）。
+            intent.putExtra("book_title", book.title)
+            intent.putExtra("book_author", book.author)
+            intent.putExtra("book_cover", book.coverUrl)
             startActivity(intent)
         }
 
@@ -55,25 +60,33 @@ class DashboardFragment : Fragment() {
 
         binding.searchView.setOnQueryTextListener(object : android.widget.SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
-                query?.let {
-                    if (it.isNotBlank()) {
-                        // 搜索会依次尝试多个书源，先给个提示避免以为卡住
-                        binding.textEmpty.text = getString(R.string.searching_multiple_sites)
-                        binding.textEmpty.visibility = View.VISIBLE
-                        viewModel.search(it)
-                    }
+                val q = query?.trim().orEmpty()
+                if (q.isNotEmpty()) {
+                    searchJob?.cancel()
+                    // 提交时先给个即时反馈，但正文文案由 searchResults/isLoading 接管，
+                    // 这里只负责把列表让出来，避免上一条结果残留。
+                    binding.textEmpty.text = getString(R.string.searching_multiple_sites)
+                    binding.textEmpty.visibility = View.VISIBLE
+                    binding.recyclerBooks.visibility = View.GONE
+                    viewModel.search(q)
+                    // 收起键盘，让用户马上看到结果而不是被输入法挡住
+                    binding.searchView.clearFocus()
                 }
                 return true
             }
 
             override fun onQueryTextChange(newText: String?): Boolean {
                 searchJob?.cancel()
-                newText?.let { text ->
-                    if (text.length >= 2) {
-                        searchJob = lifecycleScope.launch {
-                            delay(500)
-                            viewModel.search(text)
-                        }
+                val text = newText?.trim().orEmpty()
+                if (text.isEmpty()) {
+                    // 清空输入 → 回到书城列表，别让用户卡在空搜索页
+                    viewModel.loadPopularBooks()
+                    return true
+                }
+                if (text.length >= 1) {
+                    searchJob = lifecycleScope.launch {
+                        delay(400)
+                        viewModel.search(text)
                     }
                 }
                 return true
@@ -88,7 +101,7 @@ class DashboardFragment : Fragment() {
         viewModel.books.observe(viewLifecycleOwner) { bookList ->
             // 搜索时 books 会被清空；此时不能把列表藏起来，否则退出搜索后一片空白、
             // 也无法回到书城列表（原来只有 isNotEmpty() 才更新 UI，空列表等于卡死）
-            if (viewModel.isSearching.value == true) return@observe
+            if (isInSearchMode()) return@observe
             if (bookList.isEmpty()) {
                 binding.progressLoading.visibility = View.GONE
                 binding.recyclerBooks.visibility = View.GONE
@@ -106,17 +119,19 @@ class DashboardFragment : Fragment() {
         }
 
         viewModel.searchResults.observe(viewLifecycleOwner) { result ->
-            if (viewModel.isSearching.value == true) {
-                binding.progressLoading.visibility = View.GONE
-                if (result.isEmpty()) {
-                    binding.textEmpty.text = getString(R.string.search_result_empty)
-                    binding.textEmpty.visibility = View.VISIBLE
-                    binding.recyclerBooks.visibility = View.GONE
-                } else {
-                    binding.textEmpty.visibility = View.GONE
-                    binding.recyclerBooks.visibility = View.VISIBLE
-                    adapter.submitList(result)
-                }
+            // 搜索结果是搜索模式的专属数据：不管 isSearching 此刻是什么值，
+            // 只要有结果就展示。之前用 isSearching 做门禁，而它在 finally 里
+            // 已被重置为 false，导致这里永远进不来——「搜索小说…」就一直挂着。
+            if (result.isEmpty() && !isInSearchMode()) return@observe
+            binding.progressLoading.visibility = View.GONE
+            if (result.isEmpty()) {
+                binding.textEmpty.text = getString(R.string.search_result_empty)
+                binding.textEmpty.visibility = View.VISIBLE
+                binding.recyclerBooks.visibility = View.GONE
+            } else {
+                binding.textEmpty.visibility = View.GONE
+                binding.recyclerBooks.visibility = View.VISIBLE
+                adapter.submitList(result)
             }
         }
 
@@ -145,6 +160,15 @@ class DashboardFragment : Fragment() {
      * 生成分类胶囊：「推荐」+ 各分类。
      * 用代码生成而不是在 XML 里写死，分类有增减时只改数据层即可。
      */
+    /**
+     * 当前是否处于「搜索模式」。
+     *
+     * 判据：搜索框里有内容。用输入框本身的状态而不是 ViewModel 的瞬时标志，
+     * 因为 isSearching 只在发起请求的那一小段时间为 true，请求结束后就复位，
+     * 用它判断会漏掉「结果已经回来、但还在搜索模式」的中间态。
+     */
+    private fun isInSearchMode(): Boolean =
+        binding.searchView.query?.toString()?.isNotBlank() == true
     private fun setupCategoryChips() {
         val container = binding.layoutCategories
         container.removeAllViews()

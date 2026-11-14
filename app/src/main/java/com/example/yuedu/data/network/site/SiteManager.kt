@@ -62,6 +62,9 @@ object SiteManager {
                 val apiBook = site.fetchApiBook(id)
                 if (apiBook != null && apiBook.title.isNotBlank()) return@withContext apiBook
             }
+            // apibi 挂了就别再请求不可达的 www 域（会再卡一个 15 秒超时）。
+            // 列表页已经把书名/作者传进 UI 了，这里返回最小可用对象即可。
+            return@withContext Book(url = bookUrl, title = "", author = "")
         }
 
         val doc = site.fetchDocument(bookUrl)
@@ -101,6 +104,31 @@ object SiteManager {
                     }
                 }
             }
+            // booklist 接口经常 TLS 挂死（实测 PC 上 20 秒也失败），
+            // 但 book 接口给了章节总数，且 chapter 接口按序号取正文正常。
+            // 因此降级为按序号生成目录，章节名先用「第N章」占位，
+            // 正文里 chapter 接口会返回真实 chaptername。
+            // 详情与目录是并行加载的，缓存可能还没写入，自己再取一次
+            var count = BiqugeMomSite.cachedChapterCount(id ?: -1)
+            if (count <= 0 && id != null) {
+                site.fetchApiBook(id)
+                count = BiqugeMomSite.cachedChapterCount(id)
+            }
+            if (count in 1..MAX_CHAPTERS) {
+                return@withContext (1..count).map { i ->
+                    Chapter(
+                        bookUrl = bookUrl,
+                        title = "第${i}章",
+                        url = site.readerUrl(id!!, i),
+                        index = i - 1
+                    )
+                }
+            }
+
+            // apibi 彻底不可用时 www.biquge.mom 的 HTML 在多数网络也不可达，
+            // 再走 fetchDocument 只会再白等一个 15 秒超时。直接返回空，
+            // 由 ViewModel 显示明确错误，用户可重试。
+            return@withContext emptyList()
         }
 
         val firstDoc = site.fetchDocument(bookUrl)
